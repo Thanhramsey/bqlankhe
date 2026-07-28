@@ -21,6 +21,11 @@ class Payment extends Model
         return $this->belongsTo(Household::class);
     }
 
+    public function collector()
+    {
+        return $this->belongsTo(User::class, 'collector_id');
+    }
+
     public function months()
     {
         return $this->hasMany(PaymentMonth::class);

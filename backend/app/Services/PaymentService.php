@@ -10,10 +10,24 @@ use App\Models\Payment;
 use App\Models\PaymentMonth;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class PaymentService
 {
+    public function collectMany(array $data, int $collectorId, ?string $ip = null): Collection
+    {
+        return DB::transaction(function () use ($data, $collectorId, $ip) {
+            return collect($data['household_ids'])->map(function (int $householdId) use ($data, $collectorId, $ip) {
+                $item = $data;
+                unset($item['household_ids']);
+                $item['household_id'] = $householdId;
+
+                return $this->collect($item, $collectorId, $ip);
+            });
+        });
+    }
+
     public function collect(array $data, int $collectorId, ?string $ip = null): Payment
     {
         $from = CarbonImmutable::createFromFormat('Y-m', $data['from_month'])->startOfMonth();
@@ -35,8 +49,11 @@ class PaymentService
                     if ($duplicate) {
                         throw ValidationException::withMessages(['from_month' => 'Khoảng tháng đã có kỳ thu '.$month->format('m/Y').' cho dịch vụ '.$subscription->service->name.'.']);
                     }
-                    $items[] = ['household_service_id' => $subscription->id, 'month' => $month->toDateString(), 'amount' => $subscription->monthly_price];
-                    $total += (float) $subscription->monthly_price;
+                    $monthlyPrice = (float) $subscription->service->monthly_price;
+                    $taxFeeRate = (float) $subscription->service->tax_fee;
+                    $amountWithTaxFee = round($monthlyPrice * (1 + $taxFeeRate / 100), 2);
+                    $items[] = ['household_service_id' => $subscription->id, 'month' => $month->toDateString(), 'amount' => $amountWithTaxFee];
+                    $total += $amountWithTaxFee;
                 }
             }
             if (! $items) {

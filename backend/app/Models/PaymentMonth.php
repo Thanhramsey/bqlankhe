@@ -14,4 +14,9 @@ class PaymentMonth extends Model
     {
         return ['month' => 'date', 'amount' => 'decimal:2'];
     }
+
+    public function payment()
+    {
+        return $this->belongsTo(Payment::class);
+    }
 }
