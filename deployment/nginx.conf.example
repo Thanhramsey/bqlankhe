@@ -1,0 +1,15 @@
+server {
+    listen 80;
+    server_name example.local;
+    root /var/www/an-khe/backend/public;
+    index index.php;
+
+    location /api { try_files $uri $uri/ /index.php?$query_string; }
+    location / { root /var/www/an-khe/web-admin/dist; try_files $uri $uri/ /index.html; }
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+    location ~ /\. { deny all; }
+}
