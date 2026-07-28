@@ -41,6 +41,9 @@ const paymentHistory = ref<any[]>([])
 const historyHousehold = ref<any>(null)
 const historyLoading = ref(false)
 const paymentSubmitting = ref(false)
+const invoiceBusy = ref(false)
+const invoiceSettings = ref<any[]>([])
+const settingsSaving = ref(false)
 const showDeleted = ref(false)
 const dashboard = ref<any>({})
 const credentials = reactive({ identifier: 'admin', password: 'Admin@123' })
@@ -263,6 +266,8 @@ async function load() {
       rows.value = paymentsResponse.data.data
       households.value = optionsResponse.data.households
       routeOptions.value.routes = optionsResponse.data.routes || []
+    } else if (page.value === '/settings') {
+      invoiceSettings.value = (await api<any>('/invoice-settings')).data
     } else if (config.value) {
       const params = new URLSearchParams({ search: search.value, with_deleted: showDeleted.value ? '1' : '0' })
       if (page.value === '/households' && householdRouteFilter.value) params.set('collection_route_id', String(householdRouteFilter.value))
@@ -356,17 +361,55 @@ async function remove(row: any) {
 async function restore(row: any) {
   try { await api(`/${config.value!.endpoint}/${row.id}/restore`, { method: 'POST' }); notify('Đã khôi phục dữ liệu'); await load() } catch (e:any) { error.value = e.message }
 }
-async function collect() {
+async function collect(publishInvoice = false) {
   paymentSubmitting.value = true
   try {
     const selectedCount = payment.household_ids.length
-    await api('/payments', { method: 'POST', body: JSON.stringify(payment) })
+    const result = await api<any>('/payments', { method: 'POST', body: JSON.stringify(payment) })
+    let published = false
+    if (publishInvoice) {
+      try { await publishInvoices(result.data.map((item:any) => item.id), false); published = true } catch { /* Phiếu thu vẫn được giữ để phát hành lại. */ }
+    }
     payment.household_ids = []
-    notify(`Đã thu phí thành công cho ${selectedCount} hộ dân`)
+    if (!publishInvoice || published) notify(published ? `Đã thu và phát hành hóa đơn cho ${selectedCount} hộ dân` : `Đã thu phí thành công cho ${selectedCount} hộ dân`)
     await load()
   } catch (e: any) {
     error.value = e.message
   } finally { paymentSubmitting.value = false }
+}
+async function publishInvoices(paymentIds: number[], reload = true) {
+  invoiceBusy.value = true
+  try {
+    const result = await api<any>('/invoices/publish', { method: 'POST', body: JSON.stringify({ payment_ids: paymentIds }) })
+    const failures = result.data.filter((item:any) => !item.success)
+    if (failures.length) throw new Error(failures.map((item:any) => item.message).join('\n'))
+    notify(result.message)
+    if (reload) await load()
+  } catch (e:any) { error.value = e.message; throw e }
+  finally { invoiceBusy.value = false }
+}
+async function openPaymentPdf(paymentId: number, type: 'receipt' | 'invoice') {
+  const popup = window.open('', '_blank')
+  try {
+    const token = localStorage.getItem('token'); const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+    const response = await fetch(`${base}/payments/${paymentId}/${type}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!response.ok) throw new Error((await response.json()).message || 'Không thể tạo file in.')
+    const url = URL.createObjectURL(await response.blob())
+    if (popup) popup.location.href = url; else window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  } catch (e:any) { popup?.close(); error.value = e.message }
+}
+function invoiceStatus(invoice: any) {
+  return ({ CHO_PHAT_HANH: ['Chờ phát hành', 'warning'], DANG_PHAT_HANH: ['Đang phát hành', 'info'], DA_PHAT_HANH: ['Đã phát hành', 'success'], PHAT_HANH_LOI: ['Phát hành lỗi', 'error'] } as Record<string,string[]>)[invoice?.status] || ['Chưa có', 'default']
+}
+async function saveInvoiceSettings() {
+  settingsSaving.value = true
+  try {
+    const settings = Object.fromEntries(invoiceSettings.value.map((item) => [item.key, item.value]))
+    invoiceSettings.value = (await api<any>('/invoice-settings', { method: 'PUT', body: JSON.stringify({ settings }) })).data
+    notify('Đã lưu cấu hình hóa đơn')
+  } catch (e:any) { error.value = e.message }
+  finally { settingsSaving.value = false }
 }
 async function importRoutes(event: Event) {
   const input = event.target as HTMLInputElement
@@ -598,35 +641,45 @@ onMounted(async () => {
 
           <template v-else-if="page === '/payments'">
             <v-card class="payment-filter pa-4 mb-5" border rounded="xl"><div class="d-flex flex-column flex-md-row align-md-center justify-space-between ga-3"><div><div class="font-weight-bold"><v-icon icon="mdi-routes" color="primary" class="mr-2" />Chọn tuyến thu</div><div class="text-caption text-medium-emphasis mt-1">Lọc hộ dân và giao dịch theo tuyến phụ trách</div></div><v-select v-model="paymentRouteFilter" :items="routeOptions.routes || []" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" hide-details clearable max-width="420" /></div></v-card>
-            <v-row align="start"><v-col cols="12" lg="5"><v-card class="payment-form-card" border rounded="xl"><div class="payment-form-card__header"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-cash-register" /></v-avatar><div><div class="text-h6 font-weight-bold">Lập phiếu thu</div><div class="text-caption text-medium-emphasis">Thu phí theo khoảng tháng</div></div></div><v-divider /><v-card-text class="pa-4 pa-sm-5"><v-form @submit.prevent="collect">
+            <v-row align="start"><v-col cols="12" lg="5"><v-card class="payment-form-card" border rounded="xl"><div class="payment-form-card__header"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-cash-register" /></v-avatar><div><div class="text-h6 font-weight-bold">Lập phiếu thu</div><div class="text-caption text-medium-emphasis">Thu phí theo khoảng tháng</div></div></div><v-divider /><v-card-text class="pa-4 pa-sm-5"><v-form @submit.prevent="collect()">
               <div class="payment-step"><div class="payment-step__label"><span>1</span> Chọn hộ dân</div><v-autocomplete v-model="payment.household_ids" :items="paymentHouseholdOptions" item-title="payment_label" item-value="id" label="Các hộ dân cần thu" prepend-inner-icon="mdi-home-account" no-data-text="Không có hộ dân trong tuyến này" multiple chips closable-chips required /><div v-if="payment.household_ids.length" class="text-caption text-medium-emphasis mt-n2">Đã chọn {{ payment.household_ids.length }} hộ dân · Mỗi hộ sẽ có một phiếu thu riêng</div></div>
               <div class="payment-step"><div class="payment-step__label"><span>2</span> Chọn kỳ thanh toán</div><v-row dense><v-col cols="12" sm="6"><MonthPicker v-model="payment.from_month" label="Từ tháng" /></v-col><v-col cols="12" sm="6"><MonthPicker v-model="payment.to_month" label="Đến tháng" :min="payment.from_month" /></v-col></v-row><div class="period-summary"><v-icon icon="mdi-calendar-range" size="20" /><span>Kỳ thu: <strong>{{ monthLabel(payment.from_month) }} – {{ monthLabel(payment.to_month) }}</strong></span></div></div>
               <div class="payment-step"><div class="payment-step__label"><span>3</span> Thanh toán</div><v-select v-model="payment.payment_method" :items="[{ title: 'Tiền mặt', value: 'TIEN_MAT' },{ title: 'Chuyển khoản', value: 'CHUYEN_KHOAN' }]" label="Hình thức thanh toán" prepend-inner-icon="mdi-credit-card-outline" /><v-textarea v-model="payment.note" label="Ghi chú (không bắt buộc)" prepend-inner-icon="mdi-note-text-outline" rows="2" auto-grow /></div>
-              <v-btn color="primary" size="x-large" type="submit" block prepend-icon="mdi-check-circle-outline" :loading="paymentSubmitting">Xác nhận thu phí</v-btn>
+              <v-row dense><v-col cols="12" sm="6"><v-btn color="primary" size="large" type="submit" block prepend-icon="mdi-check-circle-outline" :loading="paymentSubmitting">Xác nhận thu phí</v-btn></v-col><v-col cols="12" sm="6"><v-btn color="secondary" size="large" block prepend-icon="mdi-receipt-text-arrow-right-outline" :loading="paymentSubmitting || invoiceBusy" @click="collect(true)">Thu & phát hành HĐ</v-btn></v-col></v-row>
             </v-form></v-card-text></v-card></v-col>
               <v-col cols="12" lg="7"><v-card border rounded="xl"><div class="d-flex align-center justify-space-between pa-5"><div><div class="text-h6 font-weight-bold">Giao dịch gần đây</div><div class="text-caption text-medium-emphasis">{{ paymentRouteFilter ? 'Theo tuyến đã chọn' : 'Tất cả tuyến thu' }}</div></div><v-avatar color="success" variant="tonal" rounded="lg"><v-icon icon="mdi-receipt-text-check-outline" /></v-avatar></div><v-divider />
                   <div class="payment-table"><v-table hover><thead>
                       <tr>
                         <th>Mã phiếu</th>
+                        <th>Số hóa đơn</th>
                         <th>Hộ dân</th>
                         <th>Khoảng thu</th>
                         <th>Số tiền</th>
                         <th>Trạng thái</th>
+                        <th class="text-right">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-for="row in rows" :key="row.id">
                         <td class="font-weight-medium">{{ row.code }}</td>
+                        <td><span v-if="row.invoice?.invoice_no" class="font-weight-medium text-primary">{{ row.invoice.invoice_no }}</span><span v-else class="text-medium-emphasis">—</span></td>
                         <td>{{ row.household?.owner_name }}</td>
                         <td>{{ monthLabel(row.from_month?.slice(0, 7)) }} → {{ monthLabel(row.to_month?.slice(0, 7)) }}</td>
                         <td class="font-weight-bold">{{ money(row.amount) }}</td>
                         <td>
-                          <v-chip color="success" size="small" variant="tonal">Đã thu</v-chip>
+                          <v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip>
                         </td>
+                        <td class="text-right"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /></v-list></v-menu></td>
                       </tr>
                     </tbody></v-table></div>
-                  <div class="payment-cards pa-3"><v-card v-for="row in rows" :key="row.id" class="pa-4 mb-3" variant="tonal" rounded="lg"><div class="d-flex justify-space-between ga-3"><div><div class="font-weight-bold">{{ row.household?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ row.code }} · {{ row.household?.route?.name || 'Chưa có tuyến' }}</div></div><v-chip color="success" size="small">Đã thu</v-chip></div><v-divider class="my-3" /><div class="d-flex justify-space-between text-body-2"><span>{{ monthLabel(row.from_month?.slice(0, 7)) }} – {{ monthLabel(row.to_month?.slice(0, 7)) }}</span><strong class="text-primary">{{ money(row.amount) }}</strong></div></v-card><div v-if="!rows.length" class="empty-state">Chưa có giao dịch</div></div>
+                  <div class="payment-cards pa-3"><v-card v-for="row in rows" :key="row.id" class="pa-4 mb-3" variant="tonal" rounded="lg"><div class="d-flex justify-space-between ga-3"><div><div class="font-weight-bold">{{ row.household?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ row.code }} · {{ row.household?.route?.name || 'Chưa có tuyến' }}</div><div v-if="row.invoice?.invoice_no" class="text-caption text-primary font-weight-medium mt-1">HĐ số: {{ row.invoice.invoice_no }}</div></div><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /></v-list></v-menu></div><v-divider class="my-3" /><div class="d-flex justify-space-between text-body-2 mb-3"><span>{{ monthLabel(row.from_month?.slice(0, 7)) }} – {{ monthLabel(row.to_month?.slice(0, 7)) }}</span><strong class="text-primary">{{ money(row.amount) }}</strong></div><v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip></v-card><div v-if="!rows.length" class="empty-state">Chưa có giao dịch</div></div>
                 </v-card></v-col></v-row>
+          </template>
+
+          <template v-else-if="page === '/settings'">
+            <v-form @submit.prevent="saveInvoiceSettings"><div class="d-flex flex-column flex-sm-row justify-space-between align-sm-center ga-3 mb-5"><div><div class="text-h6 font-weight-bold">Cấu hình hóa đơn điện tử</div><div class="text-body-2 text-medium-emphasis">Thông tin đơn vị, ngân hàng và kết nối VNPT Invoice</div></div><v-btn color="primary" size="large" type="submit" prepend-icon="mdi-content-save-outline" :loading="settingsSaving">Lưu cấu hình</v-btn></div>
+              <v-row><v-col v-for="group in [{key:'organization',title:'Thông tin đơn vị',icon:'mdi-office-building-outline'},{key:'invoice',title:'Thông tin hóa đơn',icon:'mdi-receipt-text-outline'},{key:'bank',title:'Thông tin ngân hàng',icon:'mdi-bank-outline'},{key:'vnpt',title:'Kết nối VNPT',icon:'mdi-cloud-sync-outline'}]" :key="group.key" cols="12" :lg="group.key === 'vnpt' ? 12 : 6"><v-card class="pa-5 h-100" border rounded="xl"><div class="form-section__title"><v-icon :icon="group.icon" />{{ group.title }}</div><v-row dense><v-col v-for="setting in invoiceSettings.filter(item => item.group === group.key)" :key="setting.key" cols="12" :md="group.key === 'vnpt' ? 6 : 12"><v-text-field v-model="setting.value" :label="setting.key" :type="setting.is_secret ? 'password' : 'text'" :prepend-inner-icon="setting.is_secret ? 'mdi-lock-outline' : undefined" :hint="setting.is_secret && setting.has_value ? 'Đã cấu hình - để trống nếu không thay đổi' : setting.description" persistent-hint /></v-col></v-row></v-card></v-col></v-row>
+            </v-form>
           </template>
 
           <template v-else-if="config">
