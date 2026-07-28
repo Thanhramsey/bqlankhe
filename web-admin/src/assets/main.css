@@ -23,5 +23,14 @@ body { margin: 0; }
 .form-section { padding: 20px 20px 6px; margin-bottom: 18px; border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); border-radius: 16px; background: rgb(var(--v-theme-surface)); }
 .form-section__title { display: flex; align-items: center; gap: 9px; margin-bottom: 18px; color: rgb(var(--v-theme-primary)); font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .status-panel { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; border: 1px solid rgba(var(--v-theme-success), .25); border-radius: 16px; background: rgba(var(--v-theme-success), .06); }
+.payment-filter { background: linear-gradient(135deg, rgba(var(--v-theme-primary), .07), rgba(var(--v-theme-surface), 1)); }
+.payment-form-card { overflow: hidden; }
+.payment-form-card__header { display: flex; align-items: center; gap: 14px; padding: 20px; }
+.payment-step { margin-bottom: 20px; }
+.payment-step__label { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; color: rgb(var(--v-theme-primary)); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .035em; }
+.payment-step__label span { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; color: white; background: rgb(var(--v-theme-primary)); }
+.period-summary { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-radius: 10px; color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), .07); font-size: 13px; }
+.payment-cards { display: none; }
 @media (max-width: 600px) { .v-container { padding: 14px !important; } .login-card { padding: 28px 22px !important; } }
 @media (max-width: 600px) { .user-modal__header, .user-modal__body { padding: 18px !important; } .avatar-panel { align-items: flex-start; gap: 14px; } .avatar-panel .v-avatar { width: 68px !important; height: 68px !important; } .form-section { padding: 16px 14px 2px; } .status-panel { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { .payment-table { display: none; } .payment-cards { display: block; } .payment-filter .v-select { max-width: none !important; width: 100%; } .payment-form-card__header { padding: 16px; } }
