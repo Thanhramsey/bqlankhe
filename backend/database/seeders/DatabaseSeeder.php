@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
         $collector = Role::updateOrCreate(['code' => 'COLLECTOR'], ['name' => 'Nhân viên thu phí']);
         $collector->permissions()->sync(Permission::whereIn('code', ['dashboard.view', 'households.manage', 'payments.view', 'payments.create'])->pluck('id'));
         $user = User::updateOrCreate(['email' => 'admin@ankhe.local'], ['name' => 'Quản trị hệ thống', 'phone' => '0900000000', 'password' => Hash::make('Admin@123'), 'is_active' => true]);
+        $user->update(['username' => 'admin']);
         $user->roles()->sync([$admin->id]);
         $menus = [['Tổng quan', '/', 'dashboard.view', 0, 'dashboard'], ['Hộ dân', '/households', 'households.manage', 10, 'home'], ['Dịch vụ', '/services', 'services.manage', 20, 'layers'], ['Tuyến thu', '/routes', 'routes.manage', 30, 'route'], ['Thu phí', '/payments', 'payments.view', 40, 'wallet'], ['Người dùng', '/users', 'users.manage', 50, 'users'], ['Cấu hình', '/settings', 'settings.manage', 60, 'settings']];
         foreach ($menus as [$name,$path,$permission,$sort,$icon]) {

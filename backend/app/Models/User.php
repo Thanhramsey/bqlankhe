@@ -12,7 +12,10 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'phone', 'password', 'is_active'])]
+#[Fillable([
+    'username', 'name', 'date_of_birth', 'gender', 'email', 'phone', 'identity_number',
+    'address', 'avatar', 'collection_route_id', 'password', 'is_active',
+])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -22,6 +25,16 @@ class User extends Authenticatable
     public function roles()
     {
         return $this->belongsToMany(Role::class);
+    }
+
+    public function collectionRoute()
+    {
+        return $this->belongsTo(CollectionRoute::class);
+    }
+
+    public function collectionRoutes()
+    {
+        return $this->belongsToMany(CollectionRoute::class)->withTimestamps();
     }
 
     public function permissions(): array
@@ -45,6 +58,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'date_of_birth' => 'date:Y-m-d',
         ];
     }
 }

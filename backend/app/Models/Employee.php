@@ -15,4 +15,5 @@ class Employee extends Model
     {
         return $this->belongsTo(CollectionRoute::class, 'collection_route_id');
     }
+
 }

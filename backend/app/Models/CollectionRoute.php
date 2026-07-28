@@ -9,7 +9,10 @@ class CollectionRoute extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['code', 'name', 'description', 'is_active'];
+    protected $fillable = ['neighborhood_id', 'code', 'name', 'description', 'is_active'];
+
+    public function neighborhood() { return $this->belongsTo(Neighborhood::class); }
+    public function users() { return $this->belongsToMany(User::class)->withTimestamps(); }
 
     protected function casts(): array
     {

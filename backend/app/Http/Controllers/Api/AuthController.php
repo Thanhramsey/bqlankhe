@@ -14,12 +14,13 @@ class AuthController extends Controller
 {
     public function login(LoginRequest $request): JsonResponse
     {
-        $user = User::where('email', $request->email)->first();
+        $identifier = trim($request->validated('identifier'));
+        $user = User::query()->where('username', $identifier)->orWhere('identity_number', $identifier)->first();
         if (! $user || ! $user->is_active || ! Hash::check($request->password, $user->password)) {
-            return response()->json(['success' => false, 'message' => 'Email hoặc mật khẩu không đúng.', 'data' => null], 422);
+            return response()->json(['success' => false, 'message' => 'Tài khoản, số CCCD hoặc mật khẩu không đúng.', 'data' => null], 422);
         }
 
-return response()->json(['success' => true, 'message' => 'Đăng nhập thành công.', 'data' => ['token' => $user->createToken('admin')->plainTextToken, 'user' => $this->profileData($user)]]);
+        return response()->json(['success' => true, 'message' => 'Đăng nhập thành công.', 'data' => ['token' => $user->createToken('admin')->plainTextToken, 'user' => $this->profileData($user)]]);
     }
 
     public function me(Request $request): JsonResponse

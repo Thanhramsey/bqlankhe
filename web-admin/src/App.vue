@@ -10,7 +10,7 @@ type ResourceConfig = {
   title: string
   icon: string
   columns: Array<[string, string]>
-  fields: Array<[string, string, string]>
+  fields: Array<[string, string, string, string?]>
 }
 
 const auth = useAuthStore()
@@ -26,8 +26,14 @@ const modal = ref(false)
 const editing = ref<Record<string, any>>({})
 const rows = ref<any[]>([])
 const households = ref<any[]>([])
+const userOptions = ref<{ roles: any[]; routes: any[] }>({ roles: [], routes: [] })
+const avatarFile = ref<File | null>(null)
+const avatarPreview = ref('')
+const routeOptions = ref<Record<string, any[]>>({ provinces: [], wards: [], neighborhoods: [], users: [], routes: [] })
+const importInput = ref<HTMLInputElement | null>(null)
+const showDeleted = ref(false)
 const dashboard = ref<any>({})
-const credentials = reactive({ email: 'admin@ankhe.local', password: 'Admin@123' })
+const credentials = reactive({ identifier: 'admin', password: 'Admin@123' })
 const payment = reactive({
   household_id: null as number | null,
   from_month: new Date().toISOString().slice(0, 7),
@@ -37,6 +43,9 @@ const payment = reactive({
 })
 
 const resources: Record<string, ResourceConfig> = {
+  '/provinces': { endpoint: 'provinces', title: 'Tỉnh / thành phố', icon: 'mdi-map-outline', columns: [['code','Mã tỉnh'],['name','Tên tỉnh']], fields: [['code','Mã tỉnh','text'],['name','Tên tỉnh','text']] },
+  '/wards': { endpoint: 'wards', title: 'Phường / xã', icon: 'mdi-city-variant-outline', columns: [['code','Mã phường/xã'],['name','Tên phường/xã'],['province.name','Tỉnh']], fields: [['province_id','Tỉnh','select','provinces'],['code','Mã phường/xã','text'],['name','Tên phường/xã','text']] },
+  '/neighborhoods': { endpoint: 'neighborhoods', title: 'Thôn / xóm / tổ', icon: 'mdi-home-group', columns: [['code','Mã thôn/xóm/tổ'],['name','Tên thôn/xóm/tổ'],['ward.name','Phường/xã']], fields: [['ward_id','Phường / xã','select','wards'],['code','Mã thôn/xóm/tổ','text'],['name','Tên thôn/xóm/tổ','text']] },
   '/households': {
     endpoint: 'households',
     title: 'Hộ dân',
@@ -76,11 +85,15 @@ const resources: Record<string, ResourceConfig> = {
     title: 'Tuyến thu',
     icon: 'mdi-map-marker-path',
     columns: [
+      ['neighborhood.name', 'Thôn / xóm / tổ'],
+      ['users_display', 'Người phụ trách'],
       ['code', 'Mã'],
       ['name', 'Tên tuyến'],
       ['description', 'Mô tả'],
     ],
     fields: [
+      ['neighborhood_id', 'Thôn / xóm / tổ', 'select', 'neighborhoods'],
+      ['user_ids', 'Người phụ trách', 'multiselect', 'users'],
       ['code', 'Mã', 'text'],
       ['name', 'Tên tuyến', 'text'],
       ['description', 'Mô tả', 'text'],
@@ -91,11 +104,20 @@ const resources: Record<string, ResourceConfig> = {
     title: 'Người dùng',
     icon: 'mdi-account-group-outline',
     columns: [
+      ['username', 'Tài khoản'],
       ['name', 'Họ tên'],
       ['email', 'Email'],
       ['phone', 'Điện thoại'],
+      ['roles_display', 'Vai trò'],
+      ['route_display', 'Tuyến thu'],
+      ['status_display', 'Trạng thái'],
     ],
     fields: [
+      ['username', 'Tài khoản', 'text'],
+      ['date_of_birth', 'Ngày sinh', 'date'],
+      ['gender', 'Giới tính (NAM/NU/KHAC)', 'text'],
+      ['identity_number', 'Số giấy tờ', 'text'],
+      ['address', 'Địa chỉ', 'text'],
       ['name', 'Họ tên', 'text'],
       ['email', 'Email', 'email'],
       ['phone', 'Điện thoại', 'text'],
@@ -121,6 +143,7 @@ const resources: Record<string, ResourceConfig> = {
 }
 
 const page = computed(() => route.path)
+const routeManagementPages = ['/provinces', '/wards', '/neighborhoods', '/routes']
 const config = computed(() => resources[page.value])
 const pageTitle = computed(() =>
   page.value === '/'
@@ -186,7 +209,7 @@ function toggleTheme() {
 async function login() {
   error.value = ''
   try {
-    await auth.login(credentials.email, credentials.password)
+    await auth.login(credentials.identifier, credentials.password)
     await load()
   } catch (e: any) {
     error.value = e.message
@@ -201,10 +224,28 @@ async function load() {
     else if (page.value === '/payments') {
       rows.value = (await api<any>('/payments?per_page=50')).data.data
       households.value = (await api<any>('/households?per_page=100')).data.data
-    } else if (config.value)
+    } else if (config.value) {
       rows.value = (
-        await api<any>(`/${config.value.endpoint}?search=${encodeURIComponent(search.value)}`)
+        await api<any>(`/${config.value.endpoint}?search=${encodeURIComponent(search.value)}&with_deleted=${showDeleted.value ? 1 : 0}`)
       ).data.data
+      busy.value = false
+      if (page.value === '/wards') routeOptions.value.provinces = (await api<any>('/provinces?per_page=100')).data.data
+      if (page.value === '/neighborhoods') routeOptions.value.wards = (await api<any>('/wards?per_page=100')).data.data
+      if (page.value === '/routes') {
+        rows.value = rows.value.map((item) => ({ ...item, user_ids: item.users?.map((user:any) => user.id), users_display: item.users?.map((user:any) => user.name).join(', ') || '—' }))
+        const [neighborhoods, users] = await Promise.all([api<any>('/neighborhoods?per_page=100'), api<any>('/users?per_page=100')])
+        routeOptions.value.neighborhoods = neighborhoods.data.data; routeOptions.value.users = users.data.data
+      }
+      if (page.value === '/users') {
+        rows.value = rows.value.map((user) => ({
+          ...user,
+          roles_display: user.roles?.map((role: any) => role.name).join(', '),
+          route_display: user.collection_routes?.map((route:any) => route.name).join(', ') || '—',
+          status_display: user.is_active ? 'Hoạt động' : 'Ngừng hoạt động',
+        }))
+        if (!userOptions.value.roles.length) userOptions.value = (await api<any>('/users/options')).data
+      }
+    }
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -216,14 +257,27 @@ function openForm(row: any = null) {
     ? { ...row }
     : { is_active: true, ward: 'An Khê', type: 'string', group: 'general' }
   modal.value = true
+  avatarFile.value = null
+  avatarPreview.value = row?.avatar_url || ''
 }
 async function save() {
   try {
     const endpoint = `/${config.value!.endpoint}${editing.value.id ? `/${editing.value.id}` : ''}`
-    await api(endpoint, {
-      method: editing.value.id ? 'PUT' : 'POST',
-      body: JSON.stringify(editing.value),
-    })
+    if (page.value === '/users') {
+      const form = new FormData()
+      const ignored = ['id', 'roles', 'collection_route', 'roles_display', 'avatar_url', 'created_at']
+      Object.entries(editing.value).forEach(([key, value]) => {
+        if (ignored.includes(key) || value === null || value === '') return
+        if (key === 'role_ids' && Array.isArray(value)) value.forEach((id) => form.append('role_ids[]', String(id)))
+        else form.append(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value))
+      })
+      form.set('is_active', editing.value.is_active ? '1' : '0')
+      if (avatarFile.value) form.set('avatar', avatarFile.value)
+      if (editing.value.id) form.set('_method', 'PUT')
+      await api(endpoint, { method: 'POST', body: form })
+    } else {
+      await api(endpoint, { method: editing.value.id ? 'PUT' : 'POST', body: JSON.stringify(editing.value) })
+    }
     modal.value = false
     notify('Đã lưu dữ liệu')
     await load()
@@ -241,6 +295,9 @@ async function remove(row: any) {
     error.value = e.message
   }
 }
+async function restore(row: any) {
+  try { await api(`/${config.value!.endpoint}/${row.id}/restore`, { method: 'POST' }); notify('Đã khôi phục dữ liệu'); await load() } catch (e:any) { error.value = e.message }
+}
 async function collect() {
   try {
     await api('/payments', { method: 'POST', body: JSON.stringify(payment) })
@@ -250,12 +307,30 @@ async function collect() {
     error.value = e.message
   }
 }
+async function importRoutes(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const form = new FormData(); form.append('file', file)
+  try { const result = await api<any>('/routes-import', { method: 'POST', body: form }); notify(`Import thành công ${result.data.routes} tuyến thu`); await load() } catch (e:any) { error.value = e.message } finally { input.value = '' }
+}
+async function downloadRouteTemplate() {
+  const token = localStorage.getItem('token')
+  const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+  const response = await fetch(`${base}/routes-import/template`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'mau-import-tuyen-thu.xlsx'; link.click(); URL.revokeObjectURL(url)
+}
 
 let searchTimer: ReturnType<typeof setTimeout>
 watch(() => route.path, load)
 watch(search, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 350)
+})
+watch(showDeleted, load)
+watch(avatarFile, (file) => {
+  if (avatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(avatarPreview.value)
+  avatarPreview.value = file ? URL.createObjectURL(file) : editing.value.avatar_url || ''
 })
 onMounted(async () => {
   await auth.restore()
@@ -272,10 +347,10 @@ onMounted(async () => {
         <v-card-subtitle class="text-center mb-7">Ban Quản lý phường An Khê</v-card-subtitle>
         <v-form @submit.prevent="login">
           <v-text-field
-            v-model="credentials.email"
-            label="Email"
-            prepend-inner-icon="mdi-email-outline"
-            type="email"
+            v-model="credentials.identifier"
+            label="Tài khoản hoặc số CCCD"
+            prepend-inner-icon="mdi-account-key-outline"
+            autocomplete="username"
             required
           />
           <v-text-field
@@ -498,6 +573,11 @@ onMounted(async () => {
           </template>
 
           <template v-else-if="config">
+            <v-tabs v-if="routeManagementPages.includes(page)" color="primary" class="mb-5" show-arrows>
+              <v-tab to="/provinces">Tỉnh</v-tab><v-tab to="/wards">Phường / xã</v-tab><v-tab to="/neighborhoods">Thôn / xóm / tổ</v-tab><v-tab to="/routes">Tuyến thu</v-tab>
+            </v-tabs>
+            <v-checkbox v-if="routeManagementPages.includes(page)" v-model="showDeleted" label="Hiển thị dữ liệu đã xóa" color="primary" hide-details class="mb-3" />
+            <div v-if="page === '/routes'" class="d-flex ga-2 mb-4 flex-wrap"><input ref="importInput" type="file" accept=".xlsx,.xls" hidden @change="importRoutes" /><v-btn variant="outlined" prepend-icon="mdi-download" @click="downloadRouteTemplate">Tải file mẫu</v-btn><v-btn variant="outlined" prepend-icon="mdi-file-excel" @click="importInput?.click()">Import Excel</v-btn></div>
             <div class="d-flex flex-column flex-sm-row justify-space-between ga-3 mb-5">
               <v-text-field
                 v-model="search"
@@ -517,7 +597,7 @@ onMounted(async () => {
                   #[`item.${key}`]="{ value }"
                   >{{ money(value) }}</template
                 ><template #item.actions="{ item }"
-                  ><v-btn
+                  ><v-btn v-if="item.deleted_at" icon="mdi-restore" size="small" variant="text" color="success" title="Khôi phục" @click="restore(item)" /><template v-else><v-btn
                     icon="mdi-pencil-outline"
                     size="small"
                     variant="text"
@@ -527,7 +607,7 @@ onMounted(async () => {
                     size="small"
                     variant="text"
                     color="error"
-                    @click="remove(item)" /></template
+                    @click="remove(item)" /></template></template
                 ><template #no-data
                   ><div class="empty-state">
                     <v-icon :icon="config.icon" size="48" />
@@ -540,22 +620,61 @@ onMounted(async () => {
         </v-container>
       </v-main>
 
-      <v-dialog v-model="modal" max-width="560"
+      <v-dialog v-if="page === '/users'" v-model="modal" max-width="960" scrollable>
+        <v-card class="user-modal" rounded="xl">
+          <div class="user-modal__header">
+            <div class="d-flex align-center ga-4"><v-avatar color="white" size="50"><v-icon color="primary" icon="mdi-account-edit-outline" size="28" /></v-avatar><div><div class="text-h6 font-weight-bold">{{ editing.id ? 'Cập nhật người dùng' : 'Thêm người dùng mới' }}</div><div class="text-body-2 opacity-80">Quản lý hồ sơ, tài khoản và quyền truy cập</div></div></div>
+            <v-btn icon="mdi-close" variant="text" color="white" @click="modal = false" />
+          </div>
+          <v-card-text class="user-modal__body"><v-form id="user-form" @submit.prevent="save">
+            <div class="avatar-panel mb-6"><v-avatar size="88" color="primary" variant="tonal" :image="avatarPreview || undefined"><span v-if="!avatarPreview" class="text-h4 font-weight-bold">{{ editing.name?.[0]?.toUpperCase() || '?' }}</span></v-avatar><div class="flex-grow-1"><div class="text-subtitle-1 font-weight-bold mb-1">Ảnh đại diện</div><div class="text-caption text-medium-emphasis mb-3">JPG, PNG hoặc WebP · Tối đa 2 MB</div><v-file-input v-model="avatarFile" accept="image/png,image/jpeg,image/webp" label="Chọn ảnh" density="compact" variant="outlined" hide-details prepend-icon="" prepend-inner-icon="mdi-camera-outline" /></div></div>
+            <div class="form-section"><div class="form-section__title"><v-icon icon="mdi-account-outline" /> Thông tin cá nhân</div><v-row dense>
+              <v-col cols="12" md="6"><v-text-field v-model="editing.name" label="Họ và tên *" prepend-inner-icon="mdi-account" required /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.date_of_birth" label="Ngày sinh" type="date" prepend-inner-icon="mdi-calendar" /></v-col>
+              <v-col cols="12" md="6"><v-select v-model="editing.gender" :items="[{title:'Nam',value:'NAM'},{title:'Nữ',value:'NU'},{title:'Khác',value:'KHAC'}]" label="Giới tính" prepend-inner-icon="mdi-gender-male-female" clearable /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.identity_number" label="Số giấy tờ" prepend-inner-icon="mdi-card-account-details-outline" /></v-col>
+              <v-col cols="12" md="6"><v-text-field v-model="editing.phone" label="Số điện thoại" prepend-inner-icon="mdi-phone-outline" /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.email" label="Email *" type="email" prepend-inner-icon="mdi-email-outline" required /></v-col><v-col cols="12"><v-text-field v-model="editing.address" label="Địa chỉ" prepend-inner-icon="mdi-map-marker-outline" /></v-col>
+            </v-row></div>
+            <div class="form-section"><div class="form-section__title"><v-icon icon="mdi-shield-account-outline" /> Tài khoản và phân quyền</div><v-row dense>
+              <v-col cols="12" md="6"><v-text-field v-model="editing.username" label="Tài khoản *" prepend-inner-icon="mdi-at" required /></v-col><v-col cols="12" md="6"><v-select v-model="editing.role_ids" :items="userOptions.roles" item-title="name" item-value="id" label="Vai trò *" prepend-inner-icon="mdi-shield-key-outline" multiple chips required /></v-col>
+              <v-col cols="12"><v-select v-model="editing.route_ids" :items="userOptions.routes" item-title="name" item-value="id" label="Phân tuyến đường thu tiền" prepend-inner-icon="mdi-map-marker-path" multiple chips clearable /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.password" :label="editing.id ? 'Mật khẩu mới' : 'Mật khẩu *'" type="password" prepend-inner-icon="mdi-lock-outline" :hint="editing.id ? 'Để trống nếu không đổi mật khẩu' : 'Tối thiểu 8 ký tự'" persistent-hint :required="!editing.id" /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.password_confirmation" label="Xác nhận mật khẩu" type="password" prepend-inner-icon="mdi-lock-check-outline" :required="!editing.id || !!editing.password" /></v-col>
+            </v-row></div>
+            <div class="status-panel"><div><div class="font-weight-bold">Trạng thái tài khoản</div><div class="text-caption text-medium-emphasis">Cho phép người dùng đăng nhập và sử dụng hệ thống</div></div><v-switch v-model="editing.is_active" :label="editing.is_active ? 'Đang hoạt động' : 'Ngừng hoạt động'" color="success" hide-details inset /></div>
+          </v-form></v-card-text>
+          <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="user-form" prepend-icon="mdi-content-save-outline">{{ editing.id ? 'Lưu thay đổi' : 'Thêm người dùng' }}</v-btn></v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <v-dialog v-else v-model="modal" max-width="560"
         ><v-card
           ><v-card-title class="d-flex align-center justify-space-between pa-5"
             ><span>{{ editing.id ? 'Cập nhật' : 'Thêm' }} {{ config?.title.toLowerCase() }}</span
             ><v-btn icon="mdi-close" variant="text" @click="modal = false" /></v-card-title
           ><v-divider /><v-card-text class="pt-6"
             ><v-form id="resource-form" @submit.prevent="save"
-              ><v-text-field
-                v-for="field in config?.fields"
-                :key="field[0]"
+              ><template v-for="field in config?.fields" :key="field[0]"><v-select
+                v-if="field[2] === 'select' || field[2] === 'multiselect'"
+                v-model="editing[field[0]]"
+                :items="routeOptions[field[3] || '']"
+                item-title="name"
+                item-value="id"
+                :label="field[1]"
+                :multiple="field[2] === 'multiselect'"
+                :chips="field[2] === 'multiselect'"
+                clearable
+              /><v-text-field v-else
                 v-model="editing[field[0]]"
                 :label="field[1]"
                 :type="field[2]"
                 :required="
-                  !['phone', 'description', 'password'].includes(field[0])
-                " /></v-form></v-card-text
+                  !['phone', 'description', 'password', 'date_of_birth', 'gender', 'identity_number', 'address'].includes(field[0])
+                " /></template>
+              <template v-if="page === '/users'">
+                <v-select v-model="editing.role_ids" :items="userOptions.roles" item-title="name" item-value="id" label="Vai trò *" multiple chips required />
+                <v-select v-model="editing.collection_route_id" :items="userOptions.routes" item-title="name" item-value="id" label="Phân tuyến đường thu tiền" clearable />
+                <v-text-field v-model="editing.password_confirmation" label="Xác nhận mật khẩu" type="password" :required="!editing.id || !!editing.password" />
+                <v-file-input v-model="avatarFile" label="Avatar (tối đa 2 MB)" accept="image/png,image/jpeg,image/webp" />
+                <v-switch v-model="editing.is_active" label="Đang hoạt động" color="primary" />
+              </template>
+              </v-form></v-card-text
           ><v-card-actions class="pa-5 pt-0"
             ><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn
             ><v-btn
