@@ -8,6 +8,7 @@ use App\Http\Resources\UserResource;
 use App\Models\AuditLog;
 use App\Models\CollectionRoute;
 use App\Models\Role;
+use App\Models\Menu;
 use App\Models\User;
 use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +22,7 @@ class UserController extends Controller
     {
         abort_unless($request->user()->hasPermission('users.manage'), 403);
         $users = User::query()
-            ->with(['roles:id,name,code', 'collectionRoutes:id,code,name'])
+            ->with(['roles:id,name,code', 'collectionRoutes:id,code,name', 'menus:id,name,path,parent_id'])
             ->when($request->filled('search'), function ($query) use ($request) {
                 $term = '%'.$request->string('search')->trim().'%';
                 $query->where(fn ($q) => $q->where('username', 'like', $term)
@@ -42,6 +43,8 @@ class UserController extends Controller
         return response()->json(['success' => true, 'message' => 'Thành công', 'data' => [
             'roles' => Role::query()->select('id', 'name', 'code')->orderBy('name')->get(),
             'routes' => CollectionRoute::query()->select('id', 'code', 'name')->where('is_active', true)->orderBy('name')->get(),
+            'menus' => Menu::query()->with('parent:id,name,icon,sort_order')->where('is_active', true)
+                ->whereNotNull('permission_code')->orderBy('sort_order')->get(['id','parent_id','name','path','icon','permission_code','sort_order']),
         ]]);
     }
 

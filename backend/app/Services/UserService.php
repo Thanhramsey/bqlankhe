@@ -15,6 +15,7 @@ class UserService
         return DB::transaction(function () use ($data, $avatar) {
             $roleIds = Arr::pull($data, 'role_ids');
             $routeIds = Arr::pull($data, 'route_ids', []);
+            $menuIds = Arr::pull($data, 'menu_ids', []);
             Arr::forget($data, ['password_confirmation', 'remove_avatar']);
             if ($avatar) {
                 $data['avatar'] = $avatar->store('avatars', 'public');
@@ -22,8 +23,9 @@ class UserService
             $user = User::create($data);
             $user->roles()->sync($roleIds);
             $user->collectionRoutes()->sync($routeIds);
+            $user->menus()->sync($menuIds);
 
-            return $user->load(['roles:id,name,code', 'collectionRoutes:id,code,name']);
+            return $user->load(['roles:id,name,code', 'collectionRoutes:id,code,name', 'menus:id,name,path,parent_id']);
         });
     }
 
@@ -32,6 +34,7 @@ class UserService
         return DB::transaction(function () use ($user, $data, $avatar) {
             $roleIds = Arr::pull($data, 'role_ids');
             $routeIds = Arr::pull($data, 'route_ids', []);
+            $menuIds = Arr::pull($data, 'menu_ids', []);
             $removeAvatar = (bool) Arr::pull($data, 'remove_avatar', false);
             Arr::forget($data, 'password_confirmation');
             if (empty($data['password'])) {
@@ -47,8 +50,9 @@ class UserService
             $user->update($data);
             $user->roles()->sync($roleIds);
             $user->collectionRoutes()->sync($routeIds);
+            $user->menus()->sync($menuIds);
 
-            return $user->load(['roles:id,name,code', 'collectionRoutes:id,code,name']);
+            return $user->load(['roles:id,name,code', 'collectionRoutes:id,code,name', 'menus:id,name,path,parent_id']);
         });
     }
 
@@ -56,6 +60,7 @@ class UserService
     {
         DB::transaction(function () use ($user) {
             $user->roles()->detach();
+            $user->menus()->detach();
             $user->delete();
         });
     }

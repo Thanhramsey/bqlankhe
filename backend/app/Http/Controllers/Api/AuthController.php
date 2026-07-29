@@ -86,6 +86,22 @@ class AuthController extends Controller
     private function profileData(User $user): array
     {
         $permissions = $user->permissions();
+        $assignedMenuIds = $user->menus()->pluck('menus.id');
+        $leafQuery = Menu::query()->where('is_active', true)->whereNotNull('permission_code')
+            ->whereIn('permission_code', $permissions);
+        if ($user->menu_access_custom) $leafQuery->whereIn('id', $assignedMenuIds);
+        $leaves = $leafQuery->orderBy('sort_order')->get();
+        $parentIds = $leaves->pluck('parent_id')->filter()->unique();
+        $parents = Menu::query()->whereIn('id', $parentIds)->where('is_active', true)->orderBy('sort_order')->get();
+        $menus = Menu::query()->where('is_active', true)->whereNull('parent_id')->whereNotNull('permission_code')
+            ->whereIn('permission_code', $permissions)
+            ->when($user->menu_access_custom, fn ($query) => $query->whereIn('id', $assignedMenuIds))
+            ->orderBy('sort_order')->get()->map(fn ($menu) => [...$menu->toArray(), 'children' => []]);
+        foreach ($parents as $parent) {
+            $children = $leaves->where('parent_id', $parent->id)->values();
+            if ($children->isNotEmpty()) $menus->push([...$parent->toArray(), 'children' => $children]);
+        }
+        $menus = $menus->sortBy('sort_order')->values();
 
         return [
             'id' => $user->id,
@@ -99,7 +115,7 @@ class AuthController extends Controller
             'address' => $user->address,
             'avatar_url' => $user->avatar ? Storage::disk('public')->url($user->avatar) : null,
             'permissions' => $permissions,
-            'menus' => Menu::where('is_active', true)->where(fn ($q) => $q->whereNull('permission_code')->orWhereIn('permission_code', $permissions))->orderBy('sort_order')->get(),
+            'menus' => $menus,
         ];
     }
 }

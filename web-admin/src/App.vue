@@ -29,10 +29,11 @@ const householdRouteFilter = ref<number | null>(null)
 const householdServiceFilter = ref<number | null>(null)
 const paymentRouteFilter = ref<number | null>(null)
 const modal = ref(false)
+const birthDateMenu = ref(false)
 const editing = ref<Record<string, any>>({})
 const rows = ref<any[]>([])
 const households = ref<any[]>([])
-const userOptions = ref<{ roles: any[]; routes: any[] }>({ roles: [], routes: [] })
+const userOptions = ref<{ roles: any[]; routes: any[]; menus: any[] }>({ roles: [], routes: [], menus: [] })
 const avatarFile = ref<File | null>(null)
 const avatarPreview = ref('')
 const routeOptions = ref<Record<string, any[]>>({ provinces: [], wards: [], neighborhoods: [], users: [], routes: [] })
@@ -247,6 +248,14 @@ const invoiceKpis = computed(() => [
   { label: 'Đã phát hành', value: invoiceData.value.summary.published || 0, icon: 'mdi-check-decagram-outline', color: 'success' },
   { label: 'Lỗi phát hành', value: invoiceData.value.summary.failed || 0, icon: 'mdi-alert-circle-outline', color: 'error' },
 ])
+const userMenuGroups = computed(() => {
+  const groups = new Map<string, any[]>()
+  for (const menu of userOptions.value.menus || []) {
+    const name = menu.parent?.name || 'Chức năng chung'
+    groups.set(name, [...(groups.get(name) || []), menu])
+  }
+  return [...groups.entries()].map(([name, menus]) => ({ name, menus }))
+})
 const reportKpis = computed(() => [
   { label: 'Tổng doanh thu', value: money(reportData.value.summary.total_revenue), icon: 'mdi-cash-multiple', color: 'success' },
   { label: 'Số giao dịch', value: reportData.value.summary.transactions || 0, icon: 'mdi-receipt-text-check-outline', color: 'primary' },
@@ -261,6 +270,20 @@ function money(value: any) {
 }
 function monthLabel(value: string) {
   return value ? `${value.slice(5, 7)}/${value.slice(0, 4)}` : '—'
+}
+function birthDateLabel(value?: string | null) {
+  if (!value) return ''
+  const [year, month, day] = value.slice(0, 10).split('-')
+  return day && month && year ? `${day}/${month}/${year}` : ''
+}
+function setBirthDate(value: unknown) {
+  const date = value instanceof Date ? value : new Date(String(value))
+  if (Number.isNaN(date.getTime())) return
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  editing.value.date_of_birth = `${year}-${month}-${day}`
+  birthDateMenu.value = false
 }
 function debtCollectors(item: any) {
   return item?.collectors?.map((collector: any) => collector.name).join(', ') || '—'
@@ -406,7 +429,7 @@ async function openForm(row: any = null) {
   }
   editing.value = row
     ? { ...row }
-    : { is_active: true, tax_fee: page.value === '/services' ? 0 : undefined, ward: 'An Khê', type: 'string', group: 'general' }
+    : { is_active: true, menu_access_custom: false, menu_ids: [], role_ids: [], route_ids: [], tax_fee: page.value === '/services' ? 0 : undefined, ward: 'An Khê', type: 'string', group: 'general' }
   modal.value = true
   avatarFile.value = null
   avatarPreview.value = row?.avatar_url || ''
@@ -416,13 +439,14 @@ async function save() {
     const endpoint = `/${config.value!.endpoint}${editing.value.id ? `/${editing.value.id}` : ''}`
     if (page.value === '/users') {
       const form = new FormData()
-      const ignored = ['id', 'roles', 'collection_route', 'roles_display', 'avatar_url', 'created_at']
+      const ignored = ['id', 'roles', 'menus', 'collection_routes', 'collection_route', 'roles_display', 'route_display', 'status_display', 'avatar_url', 'avatar', 'created_at']
       Object.entries(editing.value).forEach(([key, value]) => {
         if (ignored.includes(key) || value === null || value === '') return
-        if (key === 'role_ids' && Array.isArray(value)) value.forEach((id) => form.append('role_ids[]', String(id)))
+        if (['role_ids', 'route_ids', 'menu_ids'].includes(key) && Array.isArray(value)) value.forEach((id) => form.append(`${key}[]`, String(id)))
         else form.append(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value))
       })
       form.set('is_active', editing.value.is_active ? '1' : '0')
+      form.set('menu_access_custom', editing.value.menu_access_custom ? '1' : '0')
       if (avatarFile.value) form.set('avatar', avatarFile.value)
       if (editing.value.id) form.set('_method', 'PUT')
       await api(endpoint, { method: 'POST', body: form })
@@ -706,7 +730,7 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <v-navigation-drawer v-model="drawer" color="#216B47" width="264" class="app-sidebar">
+      <v-navigation-drawer v-model="drawer" color="#216B47" width="292" class="app-sidebar">
         <div class="d-flex align-center ga-3 pa-4 sidebar-brand">
           <div class="sidebar-logo"><img src="/logo.png" alt="Logo Ban Quản lý phường An Khê" /></div>
           <div>
@@ -715,16 +739,14 @@ onMounted(async () => {
           </div>
         </div>
         <v-divider color="white" opacity="0.12" />
-        <v-list nav class="px-3 mt-3">
-          <v-list-item
-            v-for="menu in auth.user.menus"
-            :key="menu.id"
-            :to="menu.path"
-            :prepend-icon="menuIcons[menu.path] || 'mdi-circle-outline'"
-            :title="menu.name"
-            color="white"
-            rounded="lg"
-          />
+        <v-list nav class="sidebar-menu px-3 mt-3">
+          <template v-for="menu in auth.user.menus" :key="menu.id">
+            <v-list-group v-if="menu.children?.length" :value="menu.id">
+              <template #activator="{ props }"><v-list-item v-bind="props" :prepend-icon="`mdi-${menu.icon || 'folder-outline'}`" :title="menu.name" color="white" rounded="lg" /></template>
+              <v-list-item v-for="child in menu.children" :key="child.id" :to="child.path" :prepend-icon="menuIcons[child.path] || `mdi-${child.icon || 'circle-outline'}`" :title="child.name" color="white" rounded="lg" />
+            </v-list-group>
+            <v-list-item v-else :to="menu.path" :prepend-icon="menuIcons[menu.path] || `mdi-${menu.icon || 'circle-outline'}`" :title="menu.name" color="white" rounded="lg" />
+          </template>
         </v-list>
         <template #append>
           <div class="pa-4">
@@ -945,7 +967,7 @@ onMounted(async () => {
           <v-card-text class="user-modal__body"><v-form id="user-form" @submit.prevent="save">
             <div class="avatar-panel mb-6"><v-avatar size="88" color="primary" variant="tonal" :image="avatarPreview || undefined"><span v-if="!avatarPreview" class="text-h4 font-weight-bold">{{ editing.name?.[0]?.toUpperCase() || '?' }}</span></v-avatar><div class="flex-grow-1"><div class="text-subtitle-1 font-weight-bold mb-1">Ảnh đại diện</div><div class="text-caption text-medium-emphasis mb-3">JPG, PNG hoặc WebP · Tối đa 2 MB</div><v-file-input v-model="avatarFile" accept="image/png,image/jpeg,image/webp" label="Chọn ảnh" density="compact" variant="outlined" hide-details prepend-icon="" prepend-inner-icon="mdi-camera-outline" /></div></div>
             <div class="form-section"><div class="form-section__title"><v-icon icon="mdi-account-outline" /> Thông tin cá nhân</div><v-row dense>
-              <v-col cols="12" md="6"><v-text-field v-model="editing.name" label="Họ và tên *" prepend-inner-icon="mdi-account" required /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.date_of_birth" label="Ngày sinh" type="date" prepend-inner-icon="mdi-calendar" /></v-col>
+              <v-col cols="12" md="6"><v-text-field v-model="editing.name" label="Họ và tên *" prepend-inner-icon="mdi-account" required /></v-col><v-col cols="12" md="6"><v-menu v-model="birthDateMenu" :close-on-content-click="false" location="bottom" max-width="360"><template #activator="{ props }"><v-text-field v-bind="props" :model-value="birthDateLabel(editing.date_of_birth)" label="Ngày sinh" placeholder="dd/mm/yyyy" prepend-inner-icon="mdi-calendar-heart" append-inner-icon="mdi-calendar-chevron-down" readonly clearable @click:clear.stop="editing.date_of_birth = null" /></template><v-date-picker :model-value="editing.date_of_birth ? new Date(`${editing.date_of_birth}T00:00:00`) : null" :max="new Date()" title="Chọn ngày sinh" color="primary" show-adjacent-months @update:model-value="setBirthDate" /></v-menu></v-col>
               <v-col cols="12" md="6"><v-select v-model="editing.gender" :items="[{title:'Nam',value:'NAM'},{title:'Nữ',value:'NU'},{title:'Khác',value:'KHAC'}]" label="Giới tính" prepend-inner-icon="mdi-gender-male-female" clearable /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.identity_number" label="Số giấy tờ" prepend-inner-icon="mdi-card-account-details-outline" /></v-col>
               <v-col cols="12" md="6"><v-text-field v-model="editing.phone" label="Số điện thoại" prepend-inner-icon="mdi-phone-outline" /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.email" label="Email *" type="email" prepend-inner-icon="mdi-email-outline" required /></v-col><v-col cols="12"><v-text-field v-model="editing.address" label="Địa chỉ" prepend-inner-icon="mdi-map-marker-outline" /></v-col>
             </v-row></div>
@@ -953,6 +975,7 @@ onMounted(async () => {
               <v-col cols="12" md="6"><v-text-field v-model="editing.username" label="Tài khoản *" prepend-inner-icon="mdi-at" required /></v-col><v-col cols="12" md="6"><v-select v-model="editing.role_ids" :items="userOptions.roles" item-title="name" item-value="id" label="Vai trò *" prepend-inner-icon="mdi-shield-key-outline" multiple chips required /></v-col>
               <v-col cols="12"><v-select v-model="editing.route_ids" :items="userOptions.routes" item-title="name" item-value="id" label="Phân tuyến đường thu tiền" prepend-inner-icon="mdi-map-marker-path" multiple chips clearable /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.password" :label="editing.id ? 'Mật khẩu mới' : 'Mật khẩu *'" type="password" prepend-inner-icon="mdi-lock-outline" :hint="editing.id ? 'Để trống nếu không đổi mật khẩu' : 'Tối thiểu 8 ký tự'" persistent-hint :required="!editing.id" /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.password_confirmation" label="Xác nhận mật khẩu" type="password" prepend-inner-icon="mdi-lock-check-outline" :required="!editing.id || !!editing.password" /></v-col>
             </v-row></div>
+            <div class="form-section"><div class="d-flex flex-column flex-sm-row justify-space-between align-sm-center ga-2 mb-3"><div class="form-section__title mb-0"><v-icon icon="mdi-menu-open" /> Phân quyền menu hiển thị</div><v-switch v-model="editing.menu_access_custom" label="Tùy chỉnh theo tài khoản" color="primary" hide-details inset /></div><v-alert v-if="!editing.menu_access_custom" type="info" variant="tonal" density="compact">Tài khoản sẽ nhìn thấy toàn bộ menu phù hợp với vai trò đã chọn.</v-alert><v-row v-else dense><v-col v-for="group in userMenuGroups" :key="group.name" cols="12" md="6"><v-card border rounded="lg" class="pa-3 h-100"><div class="text-subtitle-2 font-weight-bold mb-2"><v-icon icon="mdi-folder-outline" size="18" class="mr-1" />{{ group.name }}</div><v-checkbox v-for="menu in group.menus" :key="menu.id" v-model="editing.menu_ids" :value="menu.id" :label="menu.name" density="compact" color="primary" hide-details /></v-card></v-col></v-row><v-alert v-if="editing.menu_access_custom" type="warning" variant="tonal" density="compact" class="mt-3">Menu được chọn chỉ hiển thị khi vai trò của tài khoản cũng có quyền truy cập chức năng tương ứng.</v-alert></div>
             <div class="status-panel"><div><div class="font-weight-bold">Trạng thái tài khoản</div><div class="text-caption text-medium-emphasis">Cho phép người dùng đăng nhập và sử dụng hệ thống</div></div><v-switch v-model="editing.is_active" :label="editing.is_active ? 'Đang hoạt động' : 'Ngừng hoạt động'" color="success" hide-details inset /></div>
           </v-form></v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="user-form" prepend-icon="mdi-content-save-outline">{{ editing.id ? 'Lưu thay đổi' : 'Thêm người dùng' }}</v-btn></v-card-actions>

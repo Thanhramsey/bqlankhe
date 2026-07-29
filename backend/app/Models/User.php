@@ -14,7 +14,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable([
     'username', 'name', 'date_of_birth', 'gender', 'email', 'phone', 'identity_number',
-    'address', 'avatar', 'collection_route_id', 'password', 'is_active',
+    'address', 'avatar', 'collection_route_id', 'password', 'is_active', 'menu_access_custom',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -35,6 +35,11 @@ class User extends Authenticatable
     public function collectionRoutes()
     {
         return $this->belongsToMany(CollectionRoute::class)->withTimestamps();
+    }
+
+    public function menus()
+    {
+        return $this->belongsToMany(Menu::class)->withTimestamps();
     }
 
     public function permissions(): array
@@ -63,6 +68,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'menu_access_custom' => 'boolean',
             'date_of_birth' => 'date:Y-m-d',
         ];
     }
