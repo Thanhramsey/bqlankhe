@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RouteExcelController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\DocumentController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -42,6 +43,21 @@ Route::prefix('v1')->group(function () {
             Route::get('stocks', [InventoryController::class, 'stocks']);
             Route::get('report', [InventoryController::class, 'report']);
             Route::get('report/export', [InventoryController::class, 'export']);
+        });
+        Route::prefix('documents')->group(function () {
+            Route::get('options', [DocumentController::class, 'options']);
+            Route::get('categories', [DocumentController::class, 'categories']);
+            Route::post('categories', [DocumentController::class, 'storeCategory']);
+            Route::put('categories/{category}', [DocumentController::class, 'updateCategory']);
+            Route::delete('categories/{category}', [DocumentController::class, 'destroyCategory']);
+            Route::post('categories/{id}/restore', [DocumentController::class, 'restoreCategory']);
+            Route::get('{id}/preview', [DocumentController::class, 'preview'])->whereNumber('id');
+            Route::get('{id}/download', [DocumentController::class, 'download'])->whereNumber('id');
+            Route::post('{id}/restore', [DocumentController::class, 'restore'])->whereNumber('id');
+            Route::get('/', [DocumentController::class, 'index']);
+            Route::post('/', [DocumentController::class, 'store']);
+            Route::post('{document}', [DocumentController::class, 'update'])->whereNumber('document');
+            Route::delete('{document}', [DocumentController::class, 'destroy'])->whereNumber('document');
         });
         Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:settings.manage');
         Route::get('reports/revenue', [ReportController::class, 'revenue'])->middleware('permission:reports.view');

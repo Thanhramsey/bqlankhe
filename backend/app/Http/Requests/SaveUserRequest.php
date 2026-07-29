@@ -2,11 +2,22 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class SaveUserRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $roleIds = (array) $this->input('role_ids', []);
+        if (Role::query()->whereIn('id', $roleIds)->where('code', 'ADMIN')->exists()) {
+            $this->merge(['menu_access_custom' => false]);
+        } elseif (Role::query()->whereIn('id', $roleIds)->whereIn('code', ['ACCOUNTANT', 'LEADER'])->exists()) {
+            $this->merge(['menu_access_custom' => true]);
+        }
+    }
+
     public function authorize(): bool
     {
         return $this->user()?->hasPermission('users.manage') ?? false;
@@ -29,7 +40,7 @@ class SaveUserRequest extends FormRequest
             'collection_route_id' => ['nullable', 'integer', 'exists:collection_routes,id'],
             'route_ids' => ['nullable', 'array'],
             'route_ids.*' => ['integer', 'exists:collection_routes,id'],
-            'menu_ids' => ['nullable', 'array'],
+            'menu_ids' => ['required_if:menu_access_custom,true', 'array', 'min:1'],
             'menu_ids.*' => ['integer', 'exists:menus,id'],
             'menu_access_custom' => ['required', 'boolean'],
             'password' => [$userId ? 'nullable' : 'required', 'string', 'min:8', 'confirmed'],

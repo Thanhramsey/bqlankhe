@@ -7,6 +7,7 @@ import { useAuthStore } from './stores/auth'
 import MonthPicker from './components/MonthPicker.vue'
 import DashboardView from './views/dashboard/DashboardView.vue'
 import InventoryView from './views/inventory/InventoryView.vue'
+import DocumentManagementView from './views/documents/DocumentManagementView.vue'
 
 type ResourceConfig = {
   endpoint: string
@@ -200,6 +201,8 @@ const config = computed(() => resources[page.value])
 const pageTitle = computed(() =>
   page.value === '/inventory'
     ? 'Quản lý vật tư'
+  : page.value === '/documents'
+    ? 'Văn bản và tài liệu'
   : page.value === '/'
     ? 'Tổng quan'
     : page.value === '/payments'
@@ -219,6 +222,7 @@ const menuIcons: Record<string, string> = {
   '/households': 'mdi-home-city-outline',
   '/services': 'mdi-recycle-variant',
   '/inventory': 'mdi-package-variant-closed',
+  '/documents': 'mdi-file-document-multiple-outline',
   '/routes': 'mdi-map-marker-path',
   '/payments': 'mdi-wallet-outline',
   '/invoices': 'mdi-receipt-text-check-outline',
@@ -255,6 +259,15 @@ const userMenuGroups = computed(() => {
     groups.set(name, [...(groups.get(name) || []), menu])
   }
   return [...groups.entries()].map(([name, menus]) => ({ name, menus }))
+})
+const requiresAssignedMenus = computed(() => {
+  const selected = new Set((editing.value.role_ids || []).map(Number))
+  if (userOptions.value.roles.some((role) => selected.has(Number(role.id)) && role.code === 'ADMIN')) return false
+  return userOptions.value.roles.some((role) => selected.has(Number(role.id)) && ['ACCOUNTANT', 'LEADER'].includes(role.code))
+})
+const isAdministratorRole = computed(() => {
+  const selected = new Set((editing.value.role_ids || []).map(Number))
+  return userOptions.value.roles.some((role) => selected.has(Number(role.id)) && role.code === 'ADMIN')
 })
 const reportKpis = computed(() => [
   { label: 'Tổng doanh thu', value: money(reportData.value.summary.total_revenue), icon: 'mdi-cash-multiple', color: 'success' },
@@ -529,6 +542,7 @@ const auditActionLabels: Record<string, [string, string, string]> = {
   IMPORT_HOUSEHOLDS: ['Import hộ dân', 'info', 'mdi-file-excel-outline'], IMPORT_ROUTES: ['Import tuyến thu', 'info', 'mdi-file-excel-outline'], CHANGE_PASSWORD: ['Đổi mật khẩu', 'warning', 'mdi-lock-reset'], UPDATE_PROFILE: ['Sửa hồ sơ', 'info', 'mdi-account-edit-outline'],
   EXPORT_HOUSEHOLDS: ['Xuất DS hộ dân', 'success', 'mdi-microsoft-excel'], EXPORT_DEBTS: ['Xuất DS chưa thu', 'success', 'mdi-microsoft-excel'], EXPORT_INVOICES: ['Xuất DS hóa đơn', 'success', 'mdi-microsoft-excel'],
   EXPORT_REPORT_EXCEL: ['Xuất báo cáo Excel', 'success', 'mdi-microsoft-excel'], EXPORT_REPORT_PDF: ['Xuất báo cáo PDF', 'error', 'mdi-file-pdf-box'],
+  CREATE_DOCUMENT: ['Thêm tài liệu', 'primary', 'mdi-file-document-plus-outline'], UPDATE_DOCUMENT: ['Sửa tài liệu', 'warning', 'mdi-file-document-edit-outline'], DELETE_DOCUMENT: ['Xóa tài liệu', 'error', 'mdi-file-document-remove-outline'], RESTORE_DOCUMENT: ['Khôi phục tài liệu', 'success', 'mdi-file-restore-outline'],
 }
 function auditAction(action: string) { return auditActionLabels[action] || [action, 'default', 'mdi-history'] }
 const auditActionOptions = computed(() => auditData.value.actions.map((action: string) => ({ title: auditAction(action)[0], value: action })))
@@ -536,7 +550,7 @@ function auditActionFor(log: any) { return auditAction(log?.action) }
 function auditEntityFor(log: any) { return `${auditEntity(log?.entity_type)}${log?.entity_id ? ` #${log.entity_id}` : ''}` }
 function auditEntity(type: string) {
   const entity = type?.split('\\').pop() || 'Hệ thống'
-  return ({ Household: 'Hộ dân', Payment: 'Phiếu thu', Service: 'Dịch vụ', Invoice: 'Hóa đơn', User: 'Người dùng', CollectionRoute: 'Tuyến thu' } as Record<string,string>)[entity] || entity
+  return ({ Household: 'Hộ dân', Payment: 'Phiếu thu', Service: 'Dịch vụ', Invoice: 'Hóa đơn', User: 'Người dùng', CollectionRoute: 'Tuyến thu', Document: 'Tài liệu', DocumentCategory: 'Loại tài liệu' } as Record<string,string>)[entity] || entity
 }
 function auditUser(log: any) { return log?.user }
 function showAuditDetail(log: any) { auditDetail.value = log; auditModal.value = true }
@@ -638,6 +652,10 @@ let searchTimer: ReturnType<typeof setTimeout>
 let invoiceSearchTimer: ReturnType<typeof setTimeout>
 let auditSearchTimer: ReturnType<typeof setTimeout>
 watch(() => route.path, load)
+watch(() => editing.value.role_ids, () => {
+  if (isAdministratorRole.value) editing.value.menu_access_custom = false
+  else if (requiresAssignedMenus.value) editing.value.menu_access_custom = true
+}, { deep: true })
 watch(search, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 350)
@@ -810,6 +828,8 @@ onMounted(async () => {
 
           <template v-else-if="page === '/inventory'"><InventoryView /></template>
 
+          <template v-else-if="page === '/documents'"><DocumentManagementView /></template>
+
           <template v-else-if="page === '/reports'">
             <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex flex-column flex-lg-row justify-space-between ga-4 mb-5"><div class="d-flex align-center ga-3"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-chart-box-outline" /></v-avatar><div><div class="font-weight-bold">Thiết lập báo cáo</div><div class="text-caption text-medium-emphasis">Doanh thu được tính theo căn cứ thời gian đã chọn</div></div></div><div class="d-flex flex-wrap ga-2"><v-btn-toggle v-model="reportFilters.report_type" color="primary" mandatory divided><v-btn value="summary" prepend-icon="mdi-chart-pie">Tổng hợp</v-btn><v-btn value="detail" prepend-icon="mdi-format-list-bulleted">Chi tiết</v-btn></v-btn-toggle><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportReport('excel')">Excel</v-btn><v-btn color="error" variant="tonal" prepend-icon="mdi-file-pdf-box" :loading="exportBusy" @click="exportReport('pdf')">PDF</v-btn></div></div><v-row dense><v-col cols="12" md="4"><v-select v-model="reportFilters.basis" :items="[{title:'Theo ngày thu tiền',value:'paid_at'},{title:'Theo ngày xuất hóa đơn',value:'issued_at'}]" label="Căn cứ ghi nhận doanh thu" prepend-inner-icon="mdi-calendar-check-outline" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.from_date" type="date" label="Từ ngày" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.to_date" type="date" label="Đến ngày" hide-details /></v-col><v-col cols="12" md="4"><v-select v-model="reportFilters.dimension" :items="[{title:'Theo thời gian',value:'period'},{title:'Theo nhân viên thu',value:'collector'},{title:'Theo tuyến thu',value:'route'}]" label="Nhóm báo cáo" prepend-inner-icon="mdi-group" hide-details /></v-col><v-col v-if="reportFilters.dimension === 'period'" cols="12" md="4"><v-select v-model="reportFilters.period_unit" :items="[{title:'Theo tháng',value:'month'},{title:'Theo quý',value:'quarter'},{title:'Theo năm',value:'year'}]" label="Chu kỳ tổng hợp" prepend-inner-icon="mdi-calendar-range" hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collector_id" :items="reportData.options.collectors" item-title="name" item-value="id" label="Tất cả nhân viên" prepend-inner-icon="mdi-account-tie-outline" clearable hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collection_route_id" :items="reportData.options.routes" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" clearable hide-details /></v-col><v-col cols="12" :md="reportFilters.dimension === 'period' ? 2 : 6"><v-btn color="primary" size="large" block prepend-icon="mdi-chart-bar" :loading="busy" @click="load">Xem báo cáo</v-btn></v-col></v-row><v-alert v-if="reportFilters.basis === 'issued_at'" class="mt-4" type="info" variant="tonal" density="compact">Chỉ tính các hóa đơn đã phát hành thành công, dựa trên ngày phát hành hóa đơn.</v-alert></v-card>
             <v-row class="mb-1"><v-col v-for="item in reportKpis" :key="item.label" cols="12" sm="6" lg="3"><v-card class="kpi-card pa-4 h-100" border rounded="xl"><div class="d-flex justify-space-between align-center ga-3"><div><div class="text-caption text-medium-emphasis mb-1">{{ item.label }}</div><div class="text-h6 font-weight-bold">{{ item.value }}</div></div><v-avatar :color="item.color" variant="tonal" rounded="lg"><v-icon :icon="item.icon" /></v-avatar></div></v-card></v-col></v-row>
@@ -975,7 +995,7 @@ onMounted(async () => {
               <v-col cols="12" md="6"><v-text-field v-model="editing.username" label="Tài khoản *" prepend-inner-icon="mdi-at" required /></v-col><v-col cols="12" md="6"><v-select v-model="editing.role_ids" :items="userOptions.roles" item-title="name" item-value="id" label="Vai trò *" prepend-inner-icon="mdi-shield-key-outline" multiple chips required /></v-col>
               <v-col cols="12"><v-select v-model="editing.route_ids" :items="userOptions.routes" item-title="name" item-value="id" label="Phân tuyến đường thu tiền" prepend-inner-icon="mdi-map-marker-path" multiple chips clearable /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.password" :label="editing.id ? 'Mật khẩu mới' : 'Mật khẩu *'" type="password" prepend-inner-icon="mdi-lock-outline" :hint="editing.id ? 'Để trống nếu không đổi mật khẩu' : 'Tối thiểu 8 ký tự'" persistent-hint :required="!editing.id" /></v-col><v-col cols="12" md="6"><v-text-field v-model="editing.password_confirmation" label="Xác nhận mật khẩu" type="password" prepend-inner-icon="mdi-lock-check-outline" :required="!editing.id || !!editing.password" /></v-col>
             </v-row></div>
-            <div class="form-section"><div class="d-flex flex-column flex-sm-row justify-space-between align-sm-center ga-2 mb-3"><div class="form-section__title mb-0"><v-icon icon="mdi-menu-open" /> Phân quyền menu hiển thị</div><v-switch v-model="editing.menu_access_custom" label="Tùy chỉnh theo tài khoản" color="primary" hide-details inset /></div><v-alert v-if="!editing.menu_access_custom" type="info" variant="tonal" density="compact">Tài khoản sẽ nhìn thấy toàn bộ menu phù hợp với vai trò đã chọn.</v-alert><v-row v-else dense><v-col v-for="group in userMenuGroups" :key="group.name" cols="12" md="6"><v-card border rounded="lg" class="pa-3 h-100"><div class="text-subtitle-2 font-weight-bold mb-2"><v-icon icon="mdi-folder-outline" size="18" class="mr-1" />{{ group.name }}</div><v-checkbox v-for="menu in group.menus" :key="menu.id" v-model="editing.menu_ids" :value="menu.id" :label="menu.name" density="compact" color="primary" hide-details /></v-card></v-col></v-row><v-alert v-if="editing.menu_access_custom" type="warning" variant="tonal" density="compact" class="mt-3">Menu được chọn chỉ hiển thị khi vai trò của tài khoản cũng có quyền truy cập chức năng tương ứng.</v-alert></div>
+            <div class="form-section"><div class="d-flex flex-column flex-sm-row justify-space-between align-sm-center ga-2 mb-3"><div class="form-section__title mb-0"><v-icon icon="mdi-menu-open" /> Phân quyền menu hiển thị</div><v-switch v-model="editing.menu_access_custom" label="Tùy chỉnh theo tài khoản" color="primary" :disabled="requiresAssignedMenus" hide-details inset /></div><v-alert v-if="requiresAssignedMenus" type="info" variant="tonal" density="compact" class="mb-3">Vai trò Lãnh đạo và Kế toán có đầy đủ quyền hệ thống nhưng chỉ hiển thị những menu được chọn bên dưới.</v-alert><v-alert v-else-if="!editing.menu_access_custom" type="info" variant="tonal" density="compact">Tài khoản sẽ nhìn thấy toàn bộ menu phù hợp với vai trò đã chọn.</v-alert><v-row v-if="editing.menu_access_custom" dense><v-col v-for="group in userMenuGroups" :key="group.name" cols="12" md="6"><v-card border rounded="lg" class="pa-3 h-100"><div class="text-subtitle-2 font-weight-bold mb-2"><v-icon icon="mdi-folder-outline" size="18" class="mr-1" />{{ group.name }}</div><v-checkbox v-for="menu in group.menus" :key="menu.id" v-model="editing.menu_ids" :value="menu.id" :label="menu.name" density="compact" color="primary" hide-details /></v-card></v-col></v-row><v-alert v-if="editing.menu_access_custom" type="warning" variant="tonal" density="compact" class="mt-3">Phải chọn ít nhất một menu. Tài khoản chỉ nhìn thấy các menu đã được phân công.</v-alert></div>
             <div class="status-panel"><div><div class="font-weight-bold">Trạng thái tài khoản</div><div class="text-caption text-medium-emphasis">Cho phép người dùng đăng nhập và sử dụng hệ thống</div></div><v-switch v-model="editing.is_active" :label="editing.is_active ? 'Đang hoạt động' : 'Ngừng hoạt động'" color="success" hide-details inset /></div>
           </v-form></v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="user-form" prepend-icon="mdi-content-save-outline">{{ editing.id ? 'Lưu thay đổi' : 'Thêm người dùng' }}</v-btn></v-card-actions>

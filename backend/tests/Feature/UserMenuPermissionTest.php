@@ -38,4 +38,12 @@ class UserMenuPermissionTest extends TestCase
         $this->assertFalse($paths->contains('/payments'));
         $this->assertFalse($paths->contains('/reports'));
     }
+
+    public function test_leader_and_accountant_have_all_available_permissions(): void
+    {
+        $permissionCount = Permission::count();
+        $this->assertGreaterThan(0, $permissionCount);
+        $this->assertSame($permissionCount, Role::where('code','LEADER')->firstOrFail()->permissions()->count());
+        $this->assertSame($permissionCount, Role::where('code','ACCOUNTANT')->firstOrFail()->permissions()->count());
+    }
 }
