@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\InvoiceSettingController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RouteExcelController;
+use App\Http\Controllers\Api\ReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -22,6 +23,9 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('dashboard', DashboardController::class)->middleware('permission:dashboard.view');
         Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:settings.manage');
+        Route::get('reports/revenue', [ReportController::class, 'revenue'])->middleware('permission:reports.view');
+        Route::get('reports/revenue/excel', [ReportController::class, 'excel'])->middleware('permission:reports.view');
+        Route::get('reports/revenue/pdf', [ReportController::class, 'pdf'])->middleware('permission:reports.view');
         Route::get('payments', [PaymentController::class, 'index'])->middleware('permission:payments.view');
         Route::get('debts', [DebtController::class, 'index'])->middleware('permission:payments.view');
         Route::get('debts-export', [DebtController::class, 'export'])->middleware('permission:payments.view');

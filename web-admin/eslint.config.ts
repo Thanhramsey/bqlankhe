@@ -23,6 +23,21 @@ export default defineConfigWithVueTs(
   vueTsConfigs.recommended,
 
   {
+    name: 'app/legacy-monolith-compatibility',
+    files: ['src/App.vue'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      'vue/valid-v-slot': 'off',
+    },
+  },
+
+  {
+    name: 'app/vuetify-data-table-slots',
+    files: ['src/components/dashboard/*.vue'],
+    rules: { 'vue/valid-v-slot': 'off' },
+  },
+
+  {
     ...pluginPlaywright.configs['flat/recommended'],
     files: ['e2e/**/*.{test,spec}.{js,ts,jsx,tsx}'],
   },

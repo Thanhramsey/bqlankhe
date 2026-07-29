@@ -19,4 +19,9 @@ class PaymentMonth extends Model
     {
         return $this->belongsTo(Payment::class);
     }
+
+    public function householdService()
+    {
+        return $this->belongsTo(HouseholdService::class);
+    }
 }

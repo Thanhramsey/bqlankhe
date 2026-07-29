@@ -5,6 +5,7 @@ import { useTheme } from 'vuetify'
 import { api } from './api'
 import { useAuthStore } from './stores/auth'
 import MonthPicker from './components/MonthPicker.vue'
+import DashboardView from './views/dashboard/DashboardView.vue'
 
 type ResourceConfig = {
   endpoint: string
@@ -52,6 +53,12 @@ const auditSearch = ref('')
 const auditFilters = reactive({ action: null as string | null, user_id: null as number | null, from_date: '', to_date: '' })
 const auditDetail = ref<any>(null)
 const auditModal = ref(false)
+const reportData = ref<any>({ summary: {}, groups: [], details: [], options: { collectors: [], routes: [] } })
+const reportFilters = reactive({
+  basis: 'paid_at', dimension: 'period', period_unit: 'month', report_type: 'summary',
+  from_date: `${new Date().getFullYear()}-01-01`, to_date: new Date().toISOString().slice(0, 10),
+  collector_id: null as number | null, collection_route_id: null as number | null,
+})
 const debtData = ref<any>({ summary: {}, items: [], options: { routes: [], collectors: [] } })
 const debtFilters = reactive({ collection_route_id: null as number | null, collector_id: null as number | null, from_month: '', to_month: new Date().toISOString().slice(0, 7), over_six_months: false })
 const settingsSaving = ref(false)
@@ -62,7 +69,6 @@ const profileAvatarFile = ref<File | null>(null)
 const profileAvatarPreview = ref('')
 const profileForm = reactive<Record<string, any>>({})
 const showDeleted = ref(false)
-const dashboard = ref<any>({})
 const credentials = reactive({ identifier: 'admin', password: 'Admin@123' })
 const payment = reactive({
   household_ids: [] as number[],
@@ -198,6 +204,8 @@ const pageTitle = computed(() =>
         ? 'Quản lý hóa đơn điện tử'
       : page.value === '/audit-logs'
         ? 'Log hệ thống'
+      : page.value === '/reports'
+        ? 'Báo cáo doanh thu'
       : page.value === '/debts'
         ? 'Quản lý công nợ'
       : config.value?.title || 'Quản lý',
@@ -210,6 +218,7 @@ const menuIcons: Record<string, string> = {
   '/payments': 'mdi-wallet-outline',
   '/invoices': 'mdi-receipt-text-check-outline',
   '/audit-logs': 'mdi-history',
+  '/reports': 'mdi-chart-box-outline',
   '/debts': 'mdi-alert-circle-outline',
   '/users': 'mdi-account-group-outline',
   '/settings': 'mdi-cog-outline',
@@ -234,31 +243,11 @@ const invoiceKpis = computed(() => [
   { label: 'Đã phát hành', value: invoiceData.value.summary.published || 0, icon: 'mdi-check-decagram-outline', color: 'success' },
   { label: 'Lỗi phát hành', value: invoiceData.value.summary.failed || 0, icon: 'mdi-alert-circle-outline', color: 'error' },
 ])
-const kpis = computed(() => [
-  {
-    label: 'Hộ đang quản lý',
-    value: dashboard.value.households || 0,
-    icon: 'mdi-home-city',
-    color: 'primary',
-  },
-  {
-    label: 'Thu tháng này',
-    value: money(dashboard.value.revenue_month),
-    icon: 'mdi-cash-multiple',
-    color: 'success',
-  },
-  {
-    label: 'Lượt thu tháng',
-    value: dashboard.value.payments_month || 0,
-    icon: 'mdi-receipt-text-check',
-    color: 'info',
-  },
-  {
-    label: 'Công nợ',
-    value: money(dashboard.value.outstanding_debt),
-    icon: 'mdi-alert-circle-outline',
-    color: 'secondary',
-  },
+const reportKpis = computed(() => [
+  { label: 'Tổng doanh thu', value: money(reportData.value.summary.total_revenue), icon: 'mdi-cash-multiple', color: 'success' },
+  { label: 'Số giao dịch', value: reportData.value.summary.transactions || 0, icon: 'mdi-receipt-text-check-outline', color: 'primary' },
+  { label: 'Số hộ dân', value: reportData.value.summary.households || 0, icon: 'mdi-home-group', color: 'info' },
+  { label: 'Bình quân/giao dịch', value: money(reportData.value.summary.average), icon: 'mdi-chart-line', color: 'secondary' },
 ])
 
 function money(value: any) {
@@ -330,7 +319,7 @@ async function load() {
   busy.value = true
   error.value = ''
   try {
-    if (page.value === '/') dashboard.value = (await api<any>('/dashboard')).data
+    if (page.value === '/') return
     else if (page.value === '/payments') {
       const loadSequence = ++paymentLoadSequence
       const routeQuery = paymentRouteFilter.value ? `&collection_route_id=${paymentRouteFilter.value}` : ''
@@ -353,6 +342,10 @@ async function load() {
       if (auditSearch.value.trim()) params.set('search', auditSearch.value.trim())
       Object.entries(auditFilters).forEach(([key, value]) => { if (value !== null && value !== '') params.set(key, String(value)) })
       auditData.value = (await api<any>(`/audit-logs?${params.toString()}`)).data
+    } else if (page.value === '/reports') {
+      const params = new URLSearchParams()
+      Object.entries(reportFilters).forEach(([key, value]) => { if (value !== null && value !== '') params.set(key, String(value)) })
+      reportData.value = (await api<any>(`/reports/revenue?${params.toString()}`)).data
     } else if (page.value === '/debts') {
       const params = new URLSearchParams()
       Object.entries(debtFilters).forEach(([key, value]) => { if (value !== null && value !== '' && value !== false) params.set(key, String(value === true ? 1 : value)) })
@@ -507,6 +500,7 @@ const auditActionLabels: Record<string, [string, string, string]> = {
   CHANGE_PRICE: ['Đổi giá', 'warning', 'mdi-cash-edit'], PUBLISH_INVOICE: ['Xuất hóa đơn', 'success', 'mdi-receipt-text-check-outline'], PUBLISH_INVOICE_FAILED: ['Xuất hóa đơn lỗi', 'error', 'mdi-receipt-text-remove-outline'],
   IMPORT_HOUSEHOLDS: ['Import hộ dân', 'info', 'mdi-file-excel-outline'], IMPORT_ROUTES: ['Import tuyến thu', 'info', 'mdi-file-excel-outline'], CHANGE_PASSWORD: ['Đổi mật khẩu', 'warning', 'mdi-lock-reset'], UPDATE_PROFILE: ['Sửa hồ sơ', 'info', 'mdi-account-edit-outline'],
   EXPORT_HOUSEHOLDS: ['Xuất DS hộ dân', 'success', 'mdi-microsoft-excel'], EXPORT_DEBTS: ['Xuất DS chưa thu', 'success', 'mdi-microsoft-excel'], EXPORT_INVOICES: ['Xuất DS hóa đơn', 'success', 'mdi-microsoft-excel'],
+  EXPORT_REPORT_EXCEL: ['Xuất báo cáo Excel', 'success', 'mdi-microsoft-excel'], EXPORT_REPORT_PDF: ['Xuất báo cáo PDF', 'error', 'mdi-file-pdf-box'],
 }
 function auditAction(action: string) { return auditActionLabels[action] || [action, 'default', 'mdi-history'] }
 const auditActionOptions = computed(() => auditData.value.actions.map((action: string) => ({ title: auditAction(action)[0], value: action })))
@@ -519,6 +513,8 @@ function auditEntity(type: string) {
 function auditUser(log: any) { return log?.user }
 function showAuditDetail(log: any) { auditDetail.value = log; auditModal.value = true }
 function prettyJson(value: any) { return value ? JSON.stringify(value, null, 2) : 'Không có dữ liệu' }
+function reportShare(item: any) { return reportData.value.summary.total_revenue ? Number(item?.amount || 0) / reportData.value.summary.total_revenue * 100 : 0 }
+function reportDetailPeriod(item: any) { return `${monthLabel(item?.from_month)} – ${monthLabel(item?.to_month)}` }
 async function saveInvoiceSettings() {
   settingsSaving.value = true
   try {
@@ -570,7 +566,7 @@ async function downloadExport(path: string, fallbackName: string) {
     const fileName = decodeURIComponent(disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)/i)?.[1] || fallbackName)
     const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a')
     link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url)
-    notify('Đã xuất file Excel')
+    notify(fallbackName.endsWith('.pdf') ? 'Đã xuất báo cáo PDF' : 'Đã xuất file Excel')
   } catch (e:any) { error.value = e.message }
   finally { exportBusy.value = false }
 }
@@ -592,6 +588,14 @@ function exportInvoices() {
   if (invoiceStatusFilter.value) params.set('status', invoiceStatusFilter.value)
   if (invoiceRouteFilter.value) params.set('collection_route_id', String(invoiceRouteFilter.value))
   return downloadExport(`/invoices-export?${params}`, 'danh-sach-hoa-don-dien-tu.xlsx')
+}
+function reportQuery() {
+  const params = new URLSearchParams()
+  Object.entries(reportFilters).forEach(([key, value]) => { if (value !== null && value !== '') params.set(key, String(value)) })
+  return params.toString()
+}
+function exportReport(format: 'excel' | 'pdf') {
+  return downloadExport(`/reports/revenue/${format}?${reportQuery()}`, `bao-cao-doanh-thu.${format === 'excel' ? 'xlsx' : 'pdf'}`)
 }
 async function showPaymentHistory(household: any) {
   historyHousehold.value = household
@@ -660,7 +664,7 @@ onMounted(async () => {
   <v-app>
     <div v-if="!auth.user" class="login-shell">
       <v-card class="login-card pa-8 pa-sm-10" width="440">
-        <div class="login-logo mx-auto mb-5"><v-icon icon="mdi-recycle" size="34" /></div>
+        <div class="login-logo mx-auto mb-5"><img src="/logo.png" alt="Logo Ban Quản lý phường An Khê" /></div>
         <v-card-title class="text-h4 font-weight-bold text-center">Quản lý phí rác</v-card-title>
         <v-card-subtitle class="text-center mb-7">Ban Quản lý phường An Khê</v-card-subtitle>
         <v-form @submit.prevent="login">
@@ -698,12 +702,12 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <v-navigation-drawer v-model="drawer" color="#123D2B" width="264">
-        <div class="d-flex align-center ga-3 pa-5">
-          <v-avatar color="primary" rounded="lg" size="46"><v-icon icon="mdi-recycle" /></v-avatar>
+      <v-navigation-drawer v-model="drawer" color="#216B47" width="264" class="app-sidebar">
+        <div class="d-flex align-center ga-3 pa-4 sidebar-brand">
+          <div class="sidebar-logo"><img src="/logo.png" alt="Logo Ban Quản lý phường An Khê" /></div>
           <div>
-            <div class="text-subtitle-1 font-weight-bold text-white">PHÍ RÁC AN KHÊ</div>
-            <div class="text-caption text-green-lighten-3">Hệ thống quản lý</div>
+            <div class="text-subtitle-2 font-weight-bold text-white">BAN QUẢN LÝ PHƯỜNG</div>
+            <div class="text-caption text-white opacity-80">An Khê · Gia Lai</div>
           </div>
         </div>
         <v-divider color="white" opacity="0.12" />
@@ -776,37 +780,15 @@ onMounted(async () => {
             >{{ error }}</v-alert
           >
 
-          <template v-if="page === '/'">
-            <v-row
-              ><v-col v-for="item in kpis" :key="item.label" cols="12" sm="6" lg="3"
-                ><v-card class="kpi-card pa-5" border
-                  ><div class="d-flex justify-space-between">
-                    <div>
-                      <div class="text-body-2 text-medium-emphasis mb-2">{{ item.label }}</div>
-                      <div class="text-h5 font-weight-bold">{{ item.value }}</div>
-                    </div>
-                    <v-avatar :color="item.color" variant="tonal" rounded="lg"
-                      ><v-icon :icon="item.icon"
-                    /></v-avatar></div></v-card></v-col
-            ></v-row>
-            <v-card class="mt-2 pa-5" border
-              ><v-card-title class="px-0">Hoạt động thu phí 30 ngày gần nhất</v-card-title
-              ><v-card-subtitle class="px-0">Doanh thu theo ngày</v-card-subtitle>
-              <div v-if="!dashboard.revenue_chart?.length" class="empty-state">
-                <v-icon icon="mdi-chart-bar" size="56" />
-                <div class="mt-3">Chưa có giao dịch trong kỳ</div>
-              </div>
-              <div v-else class="chart-bars">
-                <div
-                  v-for="point in dashboard.revenue_chart"
-                  :key="point.date"
-                  class="chart-bar"
-                  :style="{
-                    height: Math.min(240, Math.max(16, Number(point.total) / 1000)) + 'px',
-                  }"
-                  :title="`${point.date}: ${money(point.total)}`"
-                /></div
-            ></v-card>
+          <template v-if="page === '/'"><DashboardView /></template>
+
+          <template v-else-if="page === '/reports'">
+            <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex flex-column flex-lg-row justify-space-between ga-4 mb-5"><div class="d-flex align-center ga-3"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-chart-box-outline" /></v-avatar><div><div class="font-weight-bold">Thiết lập báo cáo</div><div class="text-caption text-medium-emphasis">Doanh thu được tính theo căn cứ thời gian đã chọn</div></div></div><div class="d-flex flex-wrap ga-2"><v-btn-toggle v-model="reportFilters.report_type" color="primary" mandatory divided><v-btn value="summary" prepend-icon="mdi-chart-pie">Tổng hợp</v-btn><v-btn value="detail" prepend-icon="mdi-format-list-bulleted">Chi tiết</v-btn></v-btn-toggle><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportReport('excel')">Excel</v-btn><v-btn color="error" variant="tonal" prepend-icon="mdi-file-pdf-box" :loading="exportBusy" @click="exportReport('pdf')">PDF</v-btn></div></div><v-row dense><v-col cols="12" md="4"><v-select v-model="reportFilters.basis" :items="[{title:'Theo ngày thu tiền',value:'paid_at'},{title:'Theo ngày xuất hóa đơn',value:'issued_at'}]" label="Căn cứ ghi nhận doanh thu" prepend-inner-icon="mdi-calendar-check-outline" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.from_date" type="date" label="Từ ngày" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.to_date" type="date" label="Đến ngày" hide-details /></v-col><v-col cols="12" md="4"><v-select v-model="reportFilters.dimension" :items="[{title:'Theo thời gian',value:'period'},{title:'Theo nhân viên thu',value:'collector'},{title:'Theo tuyến thu',value:'route'}]" label="Nhóm báo cáo" prepend-inner-icon="mdi-group" hide-details /></v-col><v-col v-if="reportFilters.dimension === 'period'" cols="12" md="4"><v-select v-model="reportFilters.period_unit" :items="[{title:'Theo tháng',value:'month'},{title:'Theo quý',value:'quarter'},{title:'Theo năm',value:'year'}]" label="Chu kỳ tổng hợp" prepend-inner-icon="mdi-calendar-range" hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collector_id" :items="reportData.options.collectors" item-title="name" item-value="id" label="Tất cả nhân viên" prepend-inner-icon="mdi-account-tie-outline" clearable hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collection_route_id" :items="reportData.options.routes" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" clearable hide-details /></v-col><v-col cols="12" :md="reportFilters.dimension === 'period' ? 2 : 6"><v-btn color="primary" size="large" block prepend-icon="mdi-chart-bar" :loading="busy" @click="load">Xem báo cáo</v-btn></v-col></v-row><v-alert v-if="reportFilters.basis === 'issued_at'" class="mt-4" type="info" variant="tonal" density="compact">Chỉ tính các hóa đơn đã phát hành thành công, dựa trên ngày phát hành hóa đơn.</v-alert></v-card>
+            <v-row class="mb-1"><v-col v-for="item in reportKpis" :key="item.label" cols="12" sm="6" lg="3"><v-card class="kpi-card pa-4 h-100" border rounded="xl"><div class="d-flex justify-space-between align-center ga-3"><div><div class="text-caption text-medium-emphasis mb-1">{{ item.label }}</div><div class="text-h6 font-weight-bold">{{ item.value }}</div></div><v-avatar :color="item.color" variant="tonal" rounded="lg"><v-icon :icon="item.icon" /></v-avatar></div></v-card></v-col></v-row>
+            <v-card border rounded="xl"><div class="d-flex align-center justify-space-between pa-5"><div><div class="text-h6 font-weight-bold">{{ reportFilters.report_type === 'detail' ? 'Báo cáo doanh thu chi tiết' : 'Báo cáo doanh thu tổng hợp' }}</div><div class="text-caption text-medium-emphasis">{{ reportFilters.basis === 'issued_at' ? 'Căn cứ ngày xuất hóa đơn' : 'Căn cứ ngày thu tiền' }} · {{ new Date(reportFilters.from_date).toLocaleDateString('vi-VN') }} – {{ new Date(reportFilters.to_date).toLocaleDateString('vi-VN') }}</div></div><v-chip color="primary" variant="tonal">{{ reportData.summary.transactions || 0 }} giao dịch</v-chip></div><v-divider />
+              <v-data-table v-if="reportFilters.report_type === 'summary'" :headers="[{title:'Nhóm báo cáo',key:'label'},{title:'Số giao dịch',key:'transactions',align:'center'},{title:'Số hộ dân',key:'households',align:'center'},{title:'Doanh thu',key:'amount',align:'end'},{title:'Tỷ trọng',key:'share',align:'end'}]" :items="reportData.groups" :loading="busy" hover items-per-page="15"><template #item.amount="{ value }"><strong class="text-success text-no-wrap">{{ money(value) }}</strong></template><template #item.share="{ item }"><span class="font-weight-medium">{{ reportShare(item).toLocaleString('vi-VN',{maximumFractionDigits:1}) }}%</span></template><template #no-data><div class="empty-state"><v-icon icon="mdi-chart-box-outline" size="52" /><div class="mt-2">Không có doanh thu trong kỳ báo cáo</div></div></template></v-data-table>
+              <v-data-table v-else :headers="[{title:'Ngày ghi nhận',key:'date'},{title:'Mã phiếu',key:'code'},{title:'Số hóa đơn',key:'invoice_no'},{title:'Hộ dân',key:'household_name'},{title:'Tuyến thu',key:'route_name'},{title:'Nhân viên',key:'collector_name'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'amount',align:'end'}]" :items="reportData.details" :loading="busy" hover items-per-page="20"><template #item.date="{ value }"><span class="text-no-wrap">{{ value ? new Date(value).toLocaleString('vi-VN') : '—' }}</span></template><template #item.invoice_no="{ value }">{{ value || '—' }}</template><template #item.period="{ item }"><span class="text-no-wrap">{{ reportDetailPeriod(item) }}</span></template><template #item.amount="{ value }"><strong class="text-success text-no-wrap">{{ money(value) }}</strong></template><template #no-data><div class="empty-state"><v-icon icon="mdi-file-chart-outline" size="52" /><div class="mt-2">Không có giao dịch trong kỳ báo cáo</div></div></template></v-data-table>
+            </v-card>
           </template>
 
           <template v-else-if="page === '/audit-logs'">

@@ -21,8 +21,10 @@ class PaymentFlowTest extends TestCase
     {
         $permission = Permission::create(['name' => 'Thu phí', 'code' => 'payments.create', 'module' => 'payments']);
         $viewPermission = Permission::create(['name' => 'Xem thu phí', 'code' => 'payments.view', 'module' => 'payments']);
+        $reportPermission = Permission::create(['name' => 'Xem báo cáo', 'code' => 'reports.view', 'module' => 'reports']);
+        $dashboardPermission = Permission::create(['name' => 'Xem dashboard', 'code' => 'dashboard.view', 'module' => 'dashboard']);
         $role = Role::create(['name' => 'Thu ngân', 'code' => 'COLLECTOR']);
-        $role->permissions()->attach([$permission->id, $viewPermission->id]);
+        $role->permissions()->attach([$permission->id, $viewPermission->id, $reportPermission->id, $dashboardPermission->id]);
         $user = User::factory()->create(['is_active' => true]);
         $user->roles()->attach($role);
         $token = $user->createToken('test')->plainTextToken;
@@ -50,6 +52,12 @@ class PaymentFlowTest extends TestCase
             ->push('<getInvViewFkeyNoPayResponse><getInvViewFkeyNoPayResult>'.base64_encode('%PDF-1.4 VNPT').'</getInvViewFkeyNoPayResult></getInvViewFkeyNoPayResponse>');
         $this->withToken($token)->postJson('/api/v1/invoices/publish', ['payment_ids' => $paymentIds])
             ->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('data.0.fkey', $paymentCodes[0]);
+        $this->withToken($token)->getJson('/api/v1/dashboard?from_date=2026-01-01&to_date=2026-12-31')
+            ->assertOk()->assertJsonPath('data.kpis.0.value', 2)
+            ->assertJsonPath('data.kpis.1.value', 2)
+            ->assertJsonPath('data.kpis.3.value', 1320000)
+            ->assertJsonCount(12, 'data.revenue_chart.points')
+            ->assertJsonCount(5, 'data.invoice_status.statuses');
         $this->assertDatabaseHas('invoices', ['payment_id' => $paymentIds[0], 'status' => 'DA_PHAT_HANH', 'invoice_no' => '0000001']);
         $this->withToken($token)->getJson('/api/v1/invoices?search=0000001')
             ->assertOk()
@@ -58,6 +66,18 @@ class PaymentFlowTest extends TestCase
         $this->withToken($token)->get('/api/v1/invoices-export?status=DA_PHAT_HANH')
             ->assertOk()->assertDownload();
         $this->withToken($token)->get('/api/v1/debts-export?to_month=2026-07')
+            ->assertOk()->assertDownload();
+        $reportQuery = 'from_date=2026-01-01&to_date=2026-12-31&basis=paid_at&dimension=collector&period_unit=month&report_type=summary';
+        $this->withToken($token)->getJson('/api/v1/reports/revenue?'.$reportQuery)
+            ->assertOk()->assertJsonPath('data.summary.total_revenue', 1320000)
+            ->assertJsonPath('data.summary.transactions', 2)
+            ->assertJsonPath('data.groups.0.amount', 1320000);
+        $this->withToken($token)->getJson('/api/v1/reports/revenue?'.str_replace('basis=paid_at', 'basis=issued_at', $reportQuery))
+            ->assertOk()->assertJsonPath('data.summary.total_revenue', 1320000)
+            ->assertJsonPath('data.summary.transactions', 2);
+        $this->withToken($token)->get('/api/v1/reports/revenue/excel?'.$reportQuery)
+            ->assertOk()->assertDownload();
+        $this->withToken($token)->get('/api/v1/reports/revenue/pdf?'.$reportQuery)
             ->assertOk()->assertDownload();
         $this->withToken($token)->get('/api/v1/payments/'.$paymentIds[0].'/receipt')->assertOk()->assertHeader('content-type', 'application/pdf');
         $this->withToken($token)->get('/api/v1/payments/'.$paymentIds[0].'/invoice')->assertOk()->assertHeader('content-type', 'application/pdf');
