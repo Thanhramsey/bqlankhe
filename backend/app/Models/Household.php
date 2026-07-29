@@ -9,7 +9,7 @@ class Household extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['collection_route_id', 'code', 'sequence_number', 'owner_name', 'phone', 'identity_number', 'email', 'tax_code', 'representative', 'address', 'ward', 'note', 'is_active'];
+    protected $fillable = ['collection_route_id', 'code', 'sequence_number', 'owner_name', 'phone', 'identity_number', 'email', 'tax_code', 'representative', 'address', 'invoice_address', 'ward', 'note', 'is_active'];
 
     protected function casts(): array
     {

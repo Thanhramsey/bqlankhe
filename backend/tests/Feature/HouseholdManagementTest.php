@@ -30,14 +30,19 @@ class HouseholdManagementTest extends TestCase
             'code' => 'HD-0001', 'sequence_number' => 1, 'owner_name' => 'Nguyễn Văn A',
             'phone' => '0905000000', 'identity_number' => '048000000001', 'email' => 'vana@example.com',
             'tax_code' => '0400000001', 'representative' => 'Nguyễn Văn A', 'address' => 'An Khê',
+            'invoice_address' => 'Trụ sở Công ty A, Gia Lai',
             'service_id' => $service->id, 'note' => 'Hộ mẫu', 'is_active' => true,
         ];
 
         $created = $this->withToken($token)->postJson('/api/v1/households', $payload)
             ->assertCreated()->assertJsonPath('data.identity_number', '048000000001')
+            ->assertJsonPath('data.invoice_address', 'Trụ sở Công ty A, Gia Lai')
             ->assertJsonPath('data.service_id', $service->id)->json('data');
 
         $this->withToken($token)->getJson('/api/v1/households?search=0400000001')
+            ->assertOk()->assertJsonCount(1, 'data.data');
+
+        $this->withToken($token)->getJson('/api/v1/households?search=Công ty A')
             ->assertOk()->assertJsonCount(1, 'data.data');
 
         $this->withToken($token)->getJson('/api/v1/households?service_id='.$service->id)
@@ -66,8 +71,9 @@ class HouseholdManagementTest extends TestCase
 
         $this->assertNotNull($sheet);
         $this->assertSame('Mã hộ *', $sheet->getCell('B1')->getValue());
-        $this->assertSame('Mã dịch vụ *', $sheet->getCell('H1')->getValue());
-        $this->assertSame('list', $sheet->getCell('M2')->getDataValidation()->getType());
+        $this->assertSame('Địa chỉ HĐ', $sheet->getCell('F1')->getValue());
+        $this->assertSame('Mã dịch vụ *', $sheet->getCell('I1')->getValue());
+        $this->assertSame('list', $sheet->getCell('N2')->getDataValidation()->getType());
 
         @unlink($path);
     }

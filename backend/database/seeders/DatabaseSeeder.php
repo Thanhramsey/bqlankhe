@@ -18,14 +18,14 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $permissionNames = ['documents.view' => 'Xem văn bản, tài liệu', 'documents.manage' => 'Quản lý văn bản, tài liệu', 'dashboard.view' => 'Xem dashboard', 'users.manage' => 'Quản lý người dùng', 'routes.manage' => 'Quản lý tuyến thu', 'employees.manage' => 'Quản lý nhân viên', 'households.manage' => 'Quản lý hộ dân', 'services.manage' => 'Quản lý dịch vụ', 'payments.view' => 'Xem thu phí', 'payments.create' => 'Thực hiện thu phí', 'settings.manage' => 'Cấu hình hệ thống', 'reports.view' => 'Xem báo cáo'];
+        $permissionNames = ['directives.receive' => 'Nhận thông tin điều hành', 'directives.send' => 'Gửi thông tin điều hành', 'documents.view' => 'Xem văn bản, tài liệu', 'documents.manage' => 'Quản lý văn bản, tài liệu', 'dashboard.view' => 'Xem dashboard', 'users.manage' => 'Quản lý người dùng', 'routes.manage' => 'Quản lý tuyến thu', 'employees.manage' => 'Quản lý nhân viên', 'households.manage' => 'Quản lý hộ dân', 'services.manage' => 'Quản lý dịch vụ', 'payments.view' => 'Xem thu phí', 'payments.create' => 'Thực hiện thu phí', 'settings.manage' => 'Cấu hình hệ thống', 'reports.view' => 'Xem báo cáo'];
         foreach ($permissionNames as $code => $name) {
             Permission::updateOrCreate(['code' => $code], ['name' => $name, 'module' => explode('.', $code)[0]]);
         }
         $admin = Role::updateOrCreate(['code' => 'ADMIN'], ['name' => 'Quản trị viên']);
         $admin->permissions()->sync(Permission::pluck('id'));
         $collector = Role::updateOrCreate(['code' => 'COLLECTOR'], ['name' => 'Nhân viên thu phí']);
-        $collector->permissions()->sync(Permission::whereIn('code', ['dashboard.view', 'households.manage', 'payments.view', 'payments.create', 'documents.view'])->pluck('id'));
+        $collector->permissions()->sync(Permission::whereIn('code', ['dashboard.view', 'households.manage', 'payments.view', 'payments.create', 'documents.view', 'directives.receive'])->pluck('id'));
         $accountant = Role::updateOrCreate(['code' => 'ACCOUNTANT'], ['name' => 'Kế toán', 'description' => 'Toàn quyền nghiệp vụ, menu theo phân công']);
         $accountant->permissions()->sync(Permission::pluck('id'));
         $leader = Role::updateOrCreate(['code' => 'LEADER'], ['name' => 'Lãnh đạo', 'description' => 'Lãnh đạo đơn vị - toàn quyền nghiệp vụ, menu theo phân công']);

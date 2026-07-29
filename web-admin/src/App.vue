@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { api } from './api'
@@ -8,6 +8,8 @@ import MonthPicker from './components/MonthPicker.vue'
 import DashboardView from './views/dashboard/DashboardView.vue'
 import InventoryView from './views/inventory/InventoryView.vue'
 import DocumentManagementView from './views/documents/DocumentManagementView.vue'
+import DirectiveView from './views/directives/DirectiveView.vue'
+import { useDirectiveStore } from './stores/directives'
 
 type ResourceConfig = {
   endpoint: string
@@ -18,9 +20,11 @@ type ResourceConfig = {
 }
 
 const auth = useAuthStore()
+const directiveStore = useDirectiveStore()
 const route = useRoute()
 const theme = useTheme()
 const drawer = ref(true)
+const directiveAlert = ref(false)
 const busy = ref(false)
 const error = ref('')
 const snackbar = ref(false)
@@ -76,6 +80,7 @@ const credentials = reactive({ identifier: 'admin', password: 'Admin@123' })
 const payment = reactive({
   household_ids: [] as number[],
   from_month: new Date().toISOString().slice(0, 7),
+  month_count: 1,
   to_month: new Date().toISOString().slice(0, 7),
   payment_method: 'TIEN_MAT',
   note: '',
@@ -96,6 +101,7 @@ const resources: Record<string, ResourceConfig> = {
       ['owner_name', 'Họ tên'],
       ['phone', 'Điện thoại'],
       ['address', 'Địa chỉ'],
+      ['invoice_address', 'Địa chỉ HĐ'],
       ['route_display', 'Tuyến đường'],
       ['services_display', 'Dịch vụ'],
       ['status_display', 'Trạng thái'],
@@ -105,6 +111,7 @@ const resources: Record<string, ResourceConfig> = {
       ['owner_name', 'Chủ hộ', 'text'],
       ['phone', 'Điện thoại', 'text'],
       ['address', 'Địa chỉ', 'text'],
+      ['invoice_address', 'Địa chỉ HĐ', 'text'],
       ['identity_number', 'CCCD', 'text'],
       ['email', 'Email', 'email'],
       ['sequence_number', 'Số thứ tự', 'number'],
@@ -203,6 +210,10 @@ const pageTitle = computed(() =>
     ? 'Quản lý vật tư'
   : page.value === '/documents'
     ? 'Văn bản và tài liệu'
+  : page.value === '/directives/sent'
+    ? 'Gửi thông tin điều hành'
+  : page.value === '/directives/inbox'
+    ? 'Thông tin điều hành nhận'
   : page.value === '/'
     ? 'Tổng quan'
     : page.value === '/payments'
@@ -223,6 +234,8 @@ const menuIcons: Record<string, string> = {
   '/services': 'mdi-recycle-variant',
   '/inventory': 'mdi-package-variant-closed',
   '/documents': 'mdi-file-document-multiple-outline',
+  '/directives/sent': 'mdi-send-outline',
+  '/directives/inbox': 'mdi-inbox-arrow-down-outline',
   '/routes': 'mdi-map-marker-path',
   '/payments': 'mdi-wallet-outline',
   '/invoices': 'mdi-receipt-text-check-outline',
@@ -240,6 +253,19 @@ const paymentHouseholdOptions = computed(() => households.value.map((household) 
   ...household,
   payment_label: `${household.code || 'Chưa có mã'} — ${household.owner_name || 'Chưa có tên'} · ${household.address || 'Chưa có địa chỉ'}`,
 })))
+const paymentMonthCount = computed(() => {
+  if (!payment.from_month || !payment.to_month) return 0
+  const [fromYear = 0, fromMonth = 0] = payment.from_month.split('-').map(Number)
+  const [toYear = 0, toMonth = 0] = payment.to_month.split('-').map(Number)
+  return Math.max(0, (toYear - fromYear) * 12 + toMonth - fromMonth + 1)
+})
+
+function addMonthsToPeriod(monthValue: string, numberOfMonths: number) {
+  const [year = 0, month = 0] = monthValue.split('-').map(Number)
+  if (!year || !month) return monthValue
+  const date = new Date(year, month - 1 + Math.max(1, Math.trunc(numberOfMonths)) - 1, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
 const debtKpis = computed(() => [
   { label: 'Hộ đang nợ', value: debtData.value.summary.households_in_debt || 0, icon: 'mdi-home-alert-outline', color: 'warning' },
   { label: 'Tổng tiền nợ', value: money(debtData.value.summary.total_debt), icon: 'mdi-cash-remove', color: 'error' },
@@ -349,6 +375,8 @@ async function login() {
   error.value = ''
   try {
     await auth.login(credentials.identifier, credentials.password)
+    await directiveStore.refresh()
+    directiveAlert.value = directiveStore.unread > 0
     await load()
   } catch (e: any) {
     error.value = e.message
@@ -535,14 +563,24 @@ function invoicePeriod(invoice: any) { return `${monthLabel(invoice?.payment?.fr
 function invoicePaymentId(invoice: any) { return Number(invoice?.payment_id) }
 function invoiceIsFailed(invoice: any) { return invoice?.status === 'PHAT_HANH_LOI' }
 function invoiceIsPublished(invoice: any) { return invoice?.status === 'DA_PHAT_HANH' }
+function canDeletePendingPayment(row: any) { return row?.invoice?.status === 'CHO_PHAT_HANH' && !row?.invoice?.invoice_no }
+async function deletePendingPayment(row: any) {
+  if (!confirm(`Xóa phiếu thu ${row.code}? Các tháng của phiếu sẽ được chuyển lại thành chưa thu.`)) return
+  try {
+    const result = await api(`/payments/${row.id}`, { method: 'DELETE' })
+    notify(result.message)
+    await load()
+  } catch (e: any) { error.value = e.message }
+}
 const auditActionLabels: Record<string, [string, string, string]> = {
   LOGIN: ['Đăng nhập', 'success', 'mdi-login'], LOGIN_FAILED: ['Đăng nhập thất bại', 'error', 'mdi-login-variant'], LOGOUT: ['Đăng xuất', 'info', 'mdi-logout'],
-  COLLECT_PAYMENT: ['Thu tiền', 'success', 'mdi-cash-check'], CREATE: ['Thêm mới', 'primary', 'mdi-plus-circle-outline'], UPDATE: ['Chỉnh sửa', 'warning', 'mdi-pencil-outline'], DELETE: ['Xóa', 'error', 'mdi-delete-outline'], RESTORE: ['Khôi phục', 'success', 'mdi-backup-restore'],
+  COLLECT_PAYMENT: ['Thu tiền', 'success', 'mdi-cash-check'], DELETE_PAYMENT: ['Xóa phiếu thu', 'error', 'mdi-cash-remove'], CREATE: ['Thêm mới', 'primary', 'mdi-plus-circle-outline'], UPDATE: ['Chỉnh sửa', 'warning', 'mdi-pencil-outline'], DELETE: ['Xóa', 'error', 'mdi-delete-outline'], RESTORE: ['Khôi phục', 'success', 'mdi-backup-restore'],
   CHANGE_PRICE: ['Đổi giá', 'warning', 'mdi-cash-edit'], PUBLISH_INVOICE: ['Xuất hóa đơn', 'success', 'mdi-receipt-text-check-outline'], PUBLISH_INVOICE_FAILED: ['Xuất hóa đơn lỗi', 'error', 'mdi-receipt-text-remove-outline'],
   IMPORT_HOUSEHOLDS: ['Import hộ dân', 'info', 'mdi-file-excel-outline'], IMPORT_ROUTES: ['Import tuyến thu', 'info', 'mdi-file-excel-outline'], CHANGE_PASSWORD: ['Đổi mật khẩu', 'warning', 'mdi-lock-reset'], UPDATE_PROFILE: ['Sửa hồ sơ', 'info', 'mdi-account-edit-outline'],
   EXPORT_HOUSEHOLDS: ['Xuất DS hộ dân', 'success', 'mdi-microsoft-excel'], EXPORT_DEBTS: ['Xuất DS chưa thu', 'success', 'mdi-microsoft-excel'], EXPORT_INVOICES: ['Xuất DS hóa đơn', 'success', 'mdi-microsoft-excel'],
   EXPORT_REPORT_EXCEL: ['Xuất báo cáo Excel', 'success', 'mdi-microsoft-excel'], EXPORT_REPORT_PDF: ['Xuất báo cáo PDF', 'error', 'mdi-file-pdf-box'],
   CREATE_DOCUMENT: ['Thêm tài liệu', 'primary', 'mdi-file-document-plus-outline'], UPDATE_DOCUMENT: ['Sửa tài liệu', 'warning', 'mdi-file-document-edit-outline'], DELETE_DOCUMENT: ['Xóa tài liệu', 'error', 'mdi-file-document-remove-outline'], RESTORE_DOCUMENT: ['Khôi phục tài liệu', 'success', 'mdi-file-restore-outline'],
+  CREATE_DIRECTIVE: ['Gửi thông tin điều hành', 'primary', 'mdi-send-outline'], UPDATE_DIRECTIVE: ['Sửa thông tin điều hành', 'warning', 'mdi-file-document-edit-outline'], DELETE_DIRECTIVE: ['Xóa thông tin điều hành', 'error', 'mdi-delete-outline'],
 }
 function auditAction(action: string) { return auditActionLabels[action] || [action, 'default', 'mdi-history'] }
 const auditActionOptions = computed(() => auditData.value.actions.map((action: string) => ({ title: auditAction(action)[0], value: action })))
@@ -550,7 +588,7 @@ function auditActionFor(log: any) { return auditAction(log?.action) }
 function auditEntityFor(log: any) { return `${auditEntity(log?.entity_type)}${log?.entity_id ? ` #${log.entity_id}` : ''}` }
 function auditEntity(type: string) {
   const entity = type?.split('\\').pop() || 'Hệ thống'
-  return ({ Household: 'Hộ dân', Payment: 'Phiếu thu', Service: 'Dịch vụ', Invoice: 'Hóa đơn', User: 'Người dùng', CollectionRoute: 'Tuyến thu', Document: 'Tài liệu', DocumentCategory: 'Loại tài liệu' } as Record<string,string>)[entity] || entity
+  return ({ Household: 'Hộ dân', Payment: 'Phiếu thu', Service: 'Dịch vụ', Invoice: 'Hóa đơn', User: 'Người dùng', CollectionRoute: 'Tuyến thu', Document: 'Tài liệu', DocumentCategory: 'Loại tài liệu', OperatingDirective: 'Thông tin điều hành' } as Record<string,string>)[entity] || entity
 }
 function auditUser(log: any) { return log?.user }
 function showAuditDetail(log: any) { auditDetail.value = log; auditModal.value = true }
@@ -679,7 +717,17 @@ watch(paymentRouteFilter, () => {
   load()
 })
 watch(() => payment.from_month, (value) => {
-  if (payment.to_month < value) payment.to_month = value
+  payment.to_month = addMonthsToPeriod(value, payment.month_count)
+})
+watch(() => payment.month_count, (value) => {
+  const normalized = Math.min(120, Math.max(1, Math.trunc(Number(value) || 1)))
+  if (normalized !== value) payment.month_count = normalized
+  payment.to_month = addMonthsToPeriod(payment.from_month, normalized)
+})
+watch(() => payment.to_month, () => {
+  if (paymentMonthCount.value > 0 && payment.month_count !== paymentMonthCount.value) {
+    payment.month_count = paymentMonthCount.value
+  }
 })
 watch(() => payment.household_ids, async (householdIds) => {
   if (!householdIds.length) return
@@ -687,6 +735,7 @@ watch(() => payment.household_ids, async (householdIds) => {
     const suggestions = await Promise.all(householdIds.map((householdId) => api<any>(`/households/${householdId}/payment-suggestion`)))
     const sortedSuggestions = suggestions.map((response) => response.data.next_month).sort()
     const suggestion = sortedSuggestions[sortedSuggestions.length - 1]
+    payment.month_count = 1
     payment.from_month = suggestion
     payment.to_month = suggestion
   } catch (e:any) { error.value = e.message }
@@ -702,12 +751,16 @@ watch(profileAvatarFile, (file) => {
 })
 onMounted(async () => {
   await auth.restore()
+  if (auth.user) await directiveStore.refresh()
   await load()
 })
+const directiveRefreshTimer = window.setInterval(() => { if (auth.user) directiveStore.refresh() }, 60000)
+onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
 </script>
 
 <template>
   <v-app>
+    <v-snackbar v-model="directiveAlert" color="info" location="top right" timeout="7000"><div class="d-flex align-center ga-3"><v-icon icon="mdi-bell-ring-outline"/><div><div class="font-weight-bold">Có {{directiveStore.unread}} thông tin điều hành chưa xem</div><div class="text-caption">Mở hộp thư điều hành để xem nội dung mới.</div></div></div><template #actions><v-btn to="/directives/inbox" variant="text" @click="directiveAlert=false">Xem ngay</v-btn></template></v-snackbar>
     <div v-if="!auth.user" class="login-shell">
       <v-card class="login-card pa-8 pa-sm-10" width="440">
         <div class="login-logo mx-auto mb-5"><img src="/logo.png" alt="Logo Ban Quản lý phường An Khê" /></div>
@@ -800,6 +853,7 @@ onMounted(async () => {
             }}
           </div></v-app-bar-title
         >
+        <v-menu :close-on-content-click="false"><template #activator="{props}"><v-btn v-bind="props" icon variant="text"><v-badge :content="directiveStore.unread" :model-value="directiveStore.unread>0" color="error"><v-icon :icon="directiveStore.unread?'mdi-bell-ring-outline':'mdi-bell-outline'"/></v-badge></v-btn></template><v-card width="360" max-width="calc(100vw - 24px)" rounded="xl"><div class="d-flex align-center justify-space-between pa-4"><div><div class="font-weight-bold">Thông tin điều hành</div><div class="text-caption text-medium-emphasis">{{directiveStore.unread}} thông tin chưa xem</div></div><v-btn icon="mdi-refresh" size="small" variant="text" :loading="directiveStore.loading" @click="directiveStore.refresh"/></div><v-divider/><v-list v-if="directiveStore.recent.length" lines="two"><v-list-item v-for="item in directiveStore.recent" :key="item.id" to="/directives/inbox" prepend-icon="mdi-email-alert-outline" :title="item.title" :subtitle="`${item.creator?.name||'Hệ thống'} · ${new Date(item.created_at).toLocaleString('vi-VN')}`"/></v-list><div v-else class="pa-6 text-center text-medium-emphasis"><v-icon icon="mdi-check-circle-outline" color="success" size="36"/><div class="mt-2">Không có thông tin chưa xem</div></div><v-divider/><v-card-actions><v-btn to="/directives/inbox" color="primary" variant="text" block>Xem hộp thư điều hành</v-btn></v-card-actions></v-card></v-menu>
         <v-btn icon="mdi-theme-light-dark" variant="text" @click="toggleTheme" />
         <v-menu
           ><template #activator="{ props }"
@@ -829,6 +883,8 @@ onMounted(async () => {
           <template v-else-if="page === '/inventory'"><InventoryView /></template>
 
           <template v-else-if="page === '/documents'"><DocumentManagementView /></template>
+
+          <template v-else-if="page === '/directives/sent' || page === '/directives/inbox'"><DirectiveView /></template>
 
           <template v-else-if="page === '/reports'">
             <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex flex-column flex-lg-row justify-space-between ga-4 mb-5"><div class="d-flex align-center ga-3"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-chart-box-outline" /></v-avatar><div><div class="font-weight-bold">Thiết lập báo cáo</div><div class="text-caption text-medium-emphasis">Doanh thu được tính theo căn cứ thời gian đã chọn</div></div></div><div class="d-flex flex-wrap ga-2"><v-btn-toggle v-model="reportFilters.report_type" color="primary" mandatory divided><v-btn value="summary" prepend-icon="mdi-chart-pie">Tổng hợp</v-btn><v-btn value="detail" prepend-icon="mdi-format-list-bulleted">Chi tiết</v-btn></v-btn-toggle><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportReport('excel')">Excel</v-btn><v-btn color="error" variant="tonal" prepend-icon="mdi-file-pdf-box" :loading="exportBusy" @click="exportReport('pdf')">PDF</v-btn></div></div><v-row dense><v-col cols="12" md="4"><v-select v-model="reportFilters.basis" :items="[{title:'Theo ngày thu tiền',value:'paid_at'},{title:'Theo ngày xuất hóa đơn',value:'issued_at'}]" label="Căn cứ ghi nhận doanh thu" prepend-inner-icon="mdi-calendar-check-outline" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.from_date" type="date" label="Từ ngày" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.to_date" type="date" label="Đến ngày" hide-details /></v-col><v-col cols="12" md="4"><v-select v-model="reportFilters.dimension" :items="[{title:'Theo thời gian',value:'period'},{title:'Theo nhân viên thu',value:'collector'},{title:'Theo tuyến thu',value:'route'}]" label="Nhóm báo cáo" prepend-inner-icon="mdi-group" hide-details /></v-col><v-col v-if="reportFilters.dimension === 'period'" cols="12" md="4"><v-select v-model="reportFilters.period_unit" :items="[{title:'Theo tháng',value:'month'},{title:'Theo quý',value:'quarter'},{title:'Theo năm',value:'year'}]" label="Chu kỳ tổng hợp" prepend-inner-icon="mdi-calendar-range" hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collector_id" :items="reportData.options.collectors" item-title="name" item-value="id" label="Tất cả nhân viên" prepend-inner-icon="mdi-account-tie-outline" clearable hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collection_route_id" :items="reportData.options.routes" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" clearable hide-details /></v-col><v-col cols="12" :md="reportFilters.dimension === 'period' ? 2 : 6"><v-btn color="primary" size="large" block prepend-icon="mdi-chart-bar" :loading="busy" @click="load">Xem báo cáo</v-btn></v-col></v-row><v-alert v-if="reportFilters.basis === 'issued_at'" class="mt-4" type="info" variant="tonal" density="compact">Chỉ tính các hóa đơn đã phát hành thành công, dựa trên ngày phát hành hóa đơn.</v-alert></v-card>
@@ -874,7 +930,7 @@ onMounted(async () => {
             <v-card class="payment-filter pa-4 mb-5" border rounded="xl"><div class="d-flex flex-column flex-md-row align-md-center justify-space-between ga-3"><div><div class="font-weight-bold"><v-icon icon="mdi-routes" color="primary" class="mr-2" />Chọn tuyến thu</div><div class="text-caption text-medium-emphasis mt-1">Lọc hộ dân và giao dịch theo tuyến phụ trách</div></div><v-select v-model="paymentRouteFilter" :items="routeOptions.routes || []" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" hide-details clearable max-width="420" /></div></v-card>
             <v-row align="start"><v-col cols="12" lg="5"><v-card class="payment-form-card" border rounded="xl"><div class="payment-form-card__header"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-cash-register" /></v-avatar><div><div class="text-h6 font-weight-bold">Lập phiếu thu</div><div class="text-caption text-medium-emphasis">Thu phí theo khoảng tháng</div></div></div><v-divider /><v-card-text class="pa-4 pa-sm-5"><v-form @submit.prevent="collect()">
               <div class="payment-step"><div class="payment-step__label"><span>1</span> Chọn hộ dân</div><v-autocomplete v-model="payment.household_ids" :items="paymentHouseholdOptions" item-title="payment_label" item-value="id" label="Các hộ dân cần thu" prepend-inner-icon="mdi-home-account" no-data-text="Không có hộ dân trong tuyến này" multiple chips closable-chips required /><div v-if="payment.household_ids.length" class="text-caption text-medium-emphasis mt-n2">Đã chọn {{ payment.household_ids.length }} hộ dân · Mỗi hộ sẽ có một phiếu thu riêng</div></div>
-              <div class="payment-step"><div class="payment-step__label"><span>2</span> Chọn kỳ thanh toán</div><v-row dense><v-col cols="12" sm="6"><MonthPicker v-model="payment.from_month" label="Từ tháng" /></v-col><v-col cols="12" sm="6"><MonthPicker v-model="payment.to_month" label="Đến tháng" :min="payment.from_month" /></v-col></v-row><div class="period-summary"><v-icon icon="mdi-calendar-range" size="20" /><span>Kỳ thu: <strong>{{ monthLabel(payment.from_month) }} – {{ monthLabel(payment.to_month) }}</strong></span></div></div>
+              <div class="payment-step"><div class="payment-step__label"><span>2</span> Chọn kỳ thanh toán</div><v-row dense align="start"><v-col cols="12" sm="5"><MonthPicker v-model="payment.from_month" label="Từ tháng" /></v-col><v-col cols="12" sm="2"><v-text-field :model-value="String(payment.month_count)" class="month-count-field" type="text" inputmode="numeric" label="Số tháng" hide-details required @update:model-value="payment.month_count = Number($event) || 1" /></v-col><v-col cols="12" sm="5"><MonthPicker v-model="payment.to_month" label="Đến tháng" :min="payment.from_month" /></v-col></v-row><div class="period-summary"><v-icon icon="mdi-calendar-range" size="20" /><div class="d-flex flex-column flex-sm-row align-sm-center justify-space-between flex-grow-1 ga-1"><span>Kỳ thu: <strong>{{ monthLabel(payment.from_month) }} – {{ monthLabel(payment.to_month) }}</strong></span><v-chip color="primary" size="small" variant="tonal" prepend-icon="mdi-calendar-multiselect">{{ paymentMonthCount }} tháng</v-chip></div></div></div>
               <div class="payment-step"><div class="payment-step__label"><span>3</span> Thanh toán</div><v-select v-model="payment.payment_method" :items="[{ title: 'Tiền mặt', value: 'TIEN_MAT' },{ title: 'Chuyển khoản', value: 'CHUYEN_KHOAN' }]" label="Hình thức thanh toán" prepend-inner-icon="mdi-credit-card-outline" /><v-textarea v-model="payment.note" label="Ghi chú (không bắt buộc)" prepend-inner-icon="mdi-note-text-outline" rows="2" auto-grow /></div>
               <v-row dense><v-col cols="12" sm="6"><v-btn color="primary" size="large" type="submit" block prepend-icon="mdi-check-circle-outline" :loading="paymentSubmitting">Xác nhận thu phí</v-btn></v-col><v-col cols="12" sm="6"><v-btn color="secondary" size="large" block prepend-icon="mdi-receipt-text-arrow-right-outline" :loading="paymentSubmitting || invoiceBusy" @click="collect(true)">Thu & phát hành HĐ</v-btn></v-col></v-row>
             </v-form></v-card-text></v-card></v-col>
@@ -900,10 +956,10 @@ onMounted(async () => {
                         <td>
                           <v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip>
                         </td>
-                        <td class="text-right"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /></v-list></v-menu></td>
+                        <td class="text-right"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></td>
                       </tr>
                     </tbody></v-table></div>
-                  <div class="payment-cards pa-3"><v-card v-for="row in rows" :key="row.id" class="pa-4 mb-3" variant="tonal" rounded="lg"><div class="d-flex justify-space-between ga-3"><div><div class="font-weight-bold">{{ row.household?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ row.code }} · {{ row.household?.route?.name || 'Chưa có tuyến' }}</div><div v-if="row.invoice?.invoice_no" class="text-caption text-primary font-weight-medium mt-1">HĐ số: {{ row.invoice.invoice_no }}</div></div><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /></v-list></v-menu></div><v-divider class="my-3" /><div class="d-flex justify-space-between text-body-2 mb-3"><span>{{ monthLabel(row.from_month?.slice(0, 7)) }} – {{ monthLabel(row.to_month?.slice(0, 7)) }}</span><strong class="text-primary">{{ money(row.amount) }}</strong></div><v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip></v-card><div v-if="!rows.length" class="empty-state">Chưa có giao dịch</div></div>
+                  <div class="payment-cards pa-3"><v-card v-for="row in rows" :key="row.id" class="pa-4 mb-3" variant="tonal" rounded="lg"><div class="d-flex justify-space-between ga-3"><div><div class="font-weight-bold">{{ row.household?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ row.code }} · {{ row.household?.route?.name || 'Chưa có tuyến' }}</div><div v-if="row.invoice?.invoice_no" class="text-caption text-primary font-weight-medium mt-1">HĐ số: {{ row.invoice.invoice_no }}</div></div><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></div><v-divider class="my-3" /><div class="d-flex justify-space-between text-body-2 mb-3"><span>{{ monthLabel(row.from_month?.slice(0, 7)) }} – {{ monthLabel(row.to_month?.slice(0, 7)) }}</span><strong class="text-primary">{{ money(row.amount) }}</strong></div><v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip></v-card><div v-if="!rows.length" class="empty-state">Chưa có giao dịch</div></div>
                 </v-card></v-col></v-row>
           </template>
 
@@ -1014,6 +1070,7 @@ onMounted(async () => {
             <div class="form-section"><div class="form-section__title"><v-icon icon="mdi-map-marker-path" /> Tuyến thu và dịch vụ</div><v-row dense>
               <v-col cols="12"><v-select v-model="editing.collection_route_id" :items="routeOptions.routes || []" item-title="name" item-value="id" label="Tuyến thu" prepend-inner-icon="mdi-routes" clearable /></v-col>
               <v-col cols="12"><v-text-field v-model="editing.address" label="Địa chỉ *" prepend-inner-icon="mdi-map-marker-outline" required /></v-col>
+              <v-col cols="12"><v-text-field v-model="editing.invoice_address" label="Địa chỉ HĐ" prepend-inner-icon="mdi-receipt-text-outline" hint="Địa chỉ dùng khi xuất hóa đơn; để trống sẽ dùng địa chỉ hộ dân" persistent-hint /></v-col>
               <v-col cols="12"><v-select v-model="editing.service_id" :items="routeOptions.services || []" item-title="name" item-value="id" label="Loại dịch vụ *" prepend-inner-icon="mdi-recycle-variant" required /></v-col>
               <v-col cols="12"><v-textarea v-model="editing.note" label="Ghi chú" prepend-inner-icon="mdi-note-text-outline" rows="3" auto-grow /></v-col>
             </v-row></div>

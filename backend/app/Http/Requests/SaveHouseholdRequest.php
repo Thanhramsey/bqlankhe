@@ -26,6 +26,7 @@ class SaveHouseholdRequest extends FormRequest
             'tax_code' => ['nullable', 'string', 'max:30', Rule::unique('households')->ignore($id)],
             'representative' => ['nullable', 'string', 'max:255'],
             'address' => ['required', 'string', 'max:255'],
+            'invoice_address' => ['nullable', 'string', 'max:255'],
             'ward' => ['nullable', 'string', 'max:100'],
             'collection_route_id' => ['nullable', 'exists:collection_routes,id'],
             'service_id' => ['required', 'integer', 'exists:services,id'],

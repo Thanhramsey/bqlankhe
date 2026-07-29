@@ -33,13 +33,13 @@ export default defineConfigWithVueTs(
 
   {
     name: 'app/vuetify-data-table-slots',
-    files: ['src/components/dashboard/*.vue', 'src/views/inventory/*.vue', 'src/views/documents/*.vue'],
+    files: ['src/components/dashboard/*.vue', 'src/views/inventory/*.vue', 'src/views/documents/*.vue', 'src/views/directives/*.vue'],
     rules: { 'vue/valid-v-slot': 'off' },
   },
 
   {
     name: 'app/inventory-dynamic-forms',
-    files: ['src/views/inventory/*.vue', 'src/views/documents/*.vue'],
+    files: ['src/views/inventory/*.vue', 'src/views/documents/*.vue', 'src/views/directives/*.vue'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
 

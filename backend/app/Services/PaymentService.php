@@ -62,7 +62,7 @@ class PaymentService
             $payment = Payment::create(['code' => 'PT'.now()->format('YmdHis').random_int(100, 999), 'household_id' => $household->id, 'collector_id' => $collectorId, 'from_month' => $from, 'to_month' => $to, 'amount' => $total, 'status' => 'DA_THU', 'payment_method' => $data['payment_method'] ?? 'TIEN_MAT', 'paid_at' => now(), 'note' => $data['note'] ?? null]);
             foreach ($items as $item) {
                 $payment->months()->create($item);
-                Debt::updateOrCreate(['household_id' => $household->id, 'month' => $item['month']], ['amount' => 0, 'status' => 'DA_THU', 'payment_id' => $payment->id]);
+                $this->syncDebt($household->id, $item['month'], 0, 'DA_THU', $payment->id);
             }
             Invoice::create(['payment_id' => $payment->id, 'status' => 'CHO_PHAT_HANH']);
             AuditLog::create(['user_id' => $collectorId, 'action' => 'COLLECT_PAYMENT', 'entity_type' => Payment::class, 'entity_id' => $payment->id, 'new_values' => $payment->toArray(), 'ip_address' => $ip]);
@@ -76,5 +76,49 @@ class PaymentService
         $latest = PaymentMonth::whereHas('payment', fn ($q) => $q->where('household_id', $household->id))->max('month');
 
         return $latest ? CarbonImmutable::parse($latest)->addMonth()->format('Y-m') : now()->format('Y-m');
+    }
+
+    public function deletePending(Payment $payment, int $userId, ?string $ip = null): void
+    {
+        DB::transaction(function () use ($payment, $userId, $ip) {
+            $payment = Payment::query()->lockForUpdate()->with(['invoice', 'months'])->findOrFail($payment->id);
+            if (! $payment->invoice || $payment->invoice->status !== 'CHO_PHAT_HANH' || $payment->invoice->invoice_no) {
+                throw ValidationException::withMessages(['payment' => 'Chỉ được xóa phiếu thu có hóa đơn đang chờ phát hành.']);
+            }
+            $old = $payment->toArray();
+            foreach ($payment->months->groupBy(fn ($item) => $item->month->format('Y-m-d')) as $month => $items) {
+                $this->syncDebt(
+                    $payment->household_id,
+                    $month,
+                    $items->sum(fn ($item) => (float) $item->amount),
+                    'CHUA_THU',
+                    null,
+                );
+            }
+            $payment->invoice->delete();
+            $payment->months()->forceDelete();
+            $payment->delete();
+            AuditLog::create(['user_id' => $userId, 'action' => 'DELETE_PAYMENT', 'entity_type' => Payment::class, 'entity_id' => $payment->id, 'old_values' => $old, 'ip_address' => $ip]);
+        });
+    }
+
+    private function syncDebt(int $householdId, string $month, float $amount, string $status, ?int $paymentId): void
+    {
+        $debt = Debt::withTrashed()
+            ->where('household_id', $householdId)
+            ->whereDate('month', $month)
+            ->first();
+
+        if (! $debt) {
+            $debt = new Debt(['household_id' => $householdId, 'month' => $month]);
+        } elseif ($debt->trashed()) {
+            $debt->restore();
+        }
+
+        $debt->fill([
+            'amount' => $amount,
+            'status' => $status,
+            'payment_id' => $paymentId,
+        ])->save();
     }
 }

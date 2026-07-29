@@ -52,4 +52,11 @@ class PaymentController extends Controller
     {
         return response()->json(['success' => true, 'message' => 'Thành công', 'data' => ['next_month' => $this->service->nextSuggestedMonth($household)]]);
     }
+
+    public function destroy(Request $request, Payment $payment): JsonResponse
+    {
+        $this->service->deletePending($payment, $request->user()->id, $request->ip());
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa phiếu thu đang chờ phát hành.', 'data' => null]);
+    }
 }

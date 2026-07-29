@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\RouteExcelController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\OperatingDirectiveController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -59,6 +60,17 @@ Route::prefix('v1')->group(function () {
             Route::post('{document}', [DocumentController::class, 'update'])->whereNumber('document');
             Route::delete('{document}', [DocumentController::class, 'destroy'])->whereNumber('document');
         });
+        Route::prefix('directives')->group(function () {
+            Route::get('options', [OperatingDirectiveController::class, 'options']);
+            Route::get('sent', [OperatingDirectiveController::class, 'sent']);
+            Route::get('inbox', [OperatingDirectiveController::class, 'inbox']);
+            Route::get('unread', [OperatingDirectiveController::class, 'unread']);
+            Route::get('attachments/{attachment}', [OperatingDirectiveController::class, 'attachment']);
+            Route::post('/', [OperatingDirectiveController::class, 'store']);
+            Route::get('{id}', [OperatingDirectiveController::class, 'show'])->whereNumber('id');
+            Route::post('{directive}', [OperatingDirectiveController::class, 'update'])->whereNumber('directive');
+            Route::delete('{directive}', [OperatingDirectiveController::class, 'destroy'])->whereNumber('directive');
+        });
         Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:settings.manage');
         Route::get('reports/revenue', [ReportController::class, 'revenue'])->middleware('permission:reports.view');
         Route::get('reports/revenue/excel', [ReportController::class, 'excel'])->middleware('permission:reports.view');
@@ -68,6 +80,7 @@ Route::prefix('v1')->group(function () {
         Route::get('debts-export', [DebtController::class, 'export'])->middleware('permission:payments.view');
         Route::get('payments/options', [PaymentController::class, 'options'])->middleware('permission:payments.create');
         Route::post('payments', [PaymentController::class, 'store'])->middleware('permission:payments.create');
+        Route::delete('payments/{payment}', [PaymentController::class, 'destroy'])->middleware('permission:payments.create');
         Route::post('invoices/publish', [InvoiceController::class, 'publish'])->middleware('permission:payments.create');
         Route::get('invoices', [InvoiceController::class, 'index'])->middleware('permission:payments.view');
         Route::get('invoices-export', [InvoiceController::class, 'export'])->middleware('permission:payments.view');
