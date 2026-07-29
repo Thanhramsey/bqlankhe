@@ -40,3 +40,16 @@ cd web-admin && npm run build
 
 - Hóa đơn VNPT hiện được tạo ở trạng thái `CHO_PHAT_HANH`; cần bổ sung thông tin endpoint/chữ ký do VNPT cung cấp trước khi gọi thật.
 - Flutter Collector chưa có trong mã nguồn ban đầu. API đã dùng bearer token và response thống nhất để ứng dụng di động có thể tích hợp ở giai đoạn tiếp theo.
+
+
+# debug 
+D:\development\flutter\bin\flutter.bat run --dart-define=API_BASE_URL=http://192.168.137.1:8000/api/v1
+
+# build 
+cd D:\laragon\www\bqlankhe\mobile
+
+D:\development\flutter\bin\flutter.bat pub get
+
+D:\development\flutter\bin\flutter.bat build apk --debug --dart-define=API_BASE_URL=http://192.168.137.1:8000/api/v1
+# Build bản release:
+D:\development\flutter\bin\flutter.bat build apk --release --dart-define=API_BASE_URL=https://ten-mien-cua-ban.vn/api/v1

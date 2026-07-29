@@ -13,7 +13,10 @@ class Payment extends Model
 
     protected function casts(): array
     {
-        return ['from_month' => 'date', 'to_month' => 'date', 'amount' => 'decimal:2', 'paid_at' => 'datetime'];
+        // These fields represent accounting months, not instants in time.
+        // Serialize them as date-only values so conversion to UTC cannot move
+        // them into the previous month on mobile clients.
+        return ['from_month' => 'date:Y-m-d', 'to_month' => 'date:Y-m-d', 'amount' => 'decimal:2', 'paid_at' => 'datetime'];
     }
 
     public function household()

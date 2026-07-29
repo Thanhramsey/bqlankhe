@@ -58,10 +58,12 @@ class PaymentFlowTest extends TestCase
             ->assertJsonPath('data.kpis.3.value', 1320000)
             ->assertJsonCount(12, 'data.revenue_chart.points')
             ->assertJsonCount(5, 'data.invoice_status.statuses');
-        $this->assertDatabaseHas('invoices', ['payment_id' => $paymentIds[0], 'status' => 'DA_PHAT_HANH', 'invoice_no' => '0000001']);
+        $this->assertDatabaseHas('invoices', ['payment_id' => $paymentIds[0], 'status' => 'DA_PHAT_HANH', 'invoice_no' => '0000001', 'issued_by' => $user->id]);
         $this->withToken($token)->getJson('/api/v1/invoices?search=0000001')
             ->assertOk()
             ->assertJsonPath('data.items.data.0.invoice_no', '0000001')
+            ->assertJsonPath('data.items.data.0.payment.collector.name', $user->name)
+            ->assertJsonPath('data.items.data.0.issuer.name', $user->name)
             ->assertJsonPath('data.items.data.0.status', 'DA_PHAT_HANH');
         $this->withToken($token)->get('/api/v1/invoices-export?status=DA_PHAT_HANH')
             ->assertOk()->assertDownload();

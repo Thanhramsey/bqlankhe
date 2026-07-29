@@ -32,13 +32,13 @@ class InvoiceController extends Controller
             $index + 1, $item['payment']['code'] ?? '', $item['invoice_no'] ?? '',
             $item['payment']['household']['code'] ?? '', $item['payment']['household']['owner_name'] ?? '',
             $item['payment']['household']['phone'] ?? '', $item['payment']['household']['address'] ?? '',
-            $item['payment']['household']['route']['name'] ?? '', $item['payment']['collector']['name'] ?? '',
+            $item['payment']['household']['route']['name'] ?? '', $item['payment']['collector']['name'] ?? '', $item['issuer']['name'] ?? '',
             isset($item['payment']['from_month']) ? substr($item['payment']['from_month'], 0, 7) : '',
             isset($item['payment']['to_month']) ? substr($item['payment']['to_month'], 0, 7) : '',
             (float) ($item['payment']['amount'] ?? 0), $statusLabels[$item['status']] ?? $item['status'],
             $item['issued_at'] ?? '',
         ])->all();
-        $path = $excel->create('Danh sách hóa đơn điện tử', ['STT', 'Mã phiếu', 'Số hóa đơn', 'Mã hộ', 'Hộ dân', 'Số điện thoại', 'Địa chỉ', 'Tuyến thu', 'Người thu', 'Từ tháng', 'Đến tháng', 'Số tiền', 'Trạng thái', 'Ngày phát hành'], $rows, [8, 22, 18, 16, 25, 17, 36, 24, 22, 14, 14, 20, 20, 22], ['L']);
+        $path = $excel->create('Danh sách hóa đơn điện tử', ['STT', 'Mã phiếu', 'Số hóa đơn', 'Mã hộ', 'Hộ dân', 'Số điện thoại', 'Địa chỉ', 'Tuyến thu', 'Người thu', 'Người phát hành', 'Từ tháng', 'Đến tháng', 'Số tiền', 'Trạng thái', 'Ngày phát hành'], $rows, [8, 22, 18, 16, 25, 17, 36, 24, 22, 22, 14, 14, 20, 20, 22], ['L']);
         AuditLog::create(['user_id' => $request->user()->id, 'action' => 'EXPORT_INVOICES', 'entity_type' => Invoice::class, 'new_values' => ['total' => count($rows), 'filters' => $request->only(['search', 'status', 'collection_route_id'])], 'ip_address' => $request->ip()]);
         return response()->download($path, 'danh-sach-hoa-don-dien-tu-'.now()->format('Ymd-His').'.xlsx')->deleteFileAfterSend();
     }
@@ -46,6 +46,7 @@ class InvoiceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Invoice::query()->with([
+            'issuer:id,name',
             'payment:id,code,household_id,collector_id,from_month,to_month,amount,paid_at',
             'payment.household:id,collection_route_id,code,owner_name,phone,address',
             'payment.household.route:id,code,name',
@@ -89,7 +90,7 @@ class InvoiceController extends Controller
         $results = collect($data['payment_ids'])->map(function ($id) use ($service, $request) {
             $payment = Payment::findOrFail($id);
             try {
-                $result = ['success' => true, ...$service->publish($payment)];
+                $result = ['success' => true, ...$service->publish($payment, $request->user()->id)];
                 AuditLog::create(['user_id' => $request->user()->id, 'action' => 'PUBLISH_INVOICE', 'entity_type' => Invoice::class, 'entity_id' => $result['invoice_id'], 'new_values' => ['payment_code' => $payment->code, 'invoice_no' => $result['invoice_no']], 'ip_address' => $request->ip()]);
                 return $result;
             } catch (\Throwable $exception) {

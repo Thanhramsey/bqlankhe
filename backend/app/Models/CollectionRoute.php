@@ -11,8 +11,20 @@ class CollectionRoute extends Model
 
     protected $fillable = ['neighborhood_id', 'code', 'name', 'description', 'is_active'];
 
-    public function neighborhood() { return $this->belongsTo(Neighborhood::class); }
-    public function users() { return $this->belongsToMany(User::class)->withTimestamps(); }
+    public function neighborhood()
+    {
+        return $this->belongsTo(Neighborhood::class);
+    }
+
+    public function users()
+    {
+        return $this->belongsToMany(User::class)->withTimestamps();
+    }
+
+    public function households()
+    {
+        return $this->hasMany(Household::class);
+    }
 
     protected function casts(): array
     {

@@ -906,7 +906,9 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
             <v-card border rounded="xl">
               <div class="d-flex align-center justify-space-between pa-5 ga-3"><div><div class="text-h6 font-weight-bold">Danh sách hóa đơn</div><div class="text-caption text-medium-emphasis">Hóa đơn được tạo tự động sau khi lập phiếu thu</div></div><div class="d-flex ga-2"><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportInvoices">Export Excel</v-btn><v-btn icon="mdi-refresh" variant="tonal" color="primary" title="Tải lại" :loading="busy" @click="load" /></div></div>
               <v-divider />
-              <v-data-table :headers="[{title:'Mã phiếu',key:'payment.code'},{title:'Số hóa đơn',key:'invoice_no'},{title:'Hộ dân',key:'household'},{title:'Tuyến thu',key:'payment.household.route.name'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'payment.amount',align:'end'},{title:'Ngày phát hành',key:'issued_at'},{title:'Trạng thái',key:'status'},{title:'Thao tác',key:'actions',align:'end',sortable:false}]" :items="invoiceData.items.data || []" :loading="busy" hover items-per-page="15">
+              <v-data-table :headers="[{title:'Mã phiếu',key:'payment.code'},{title:'Số hóa đơn',key:'invoice_no'},{title:'Hộ dân',key:'household'},{title:'Tuyến thu',key:'payment.household.route.name'},{title:'Người thu',key:'payment.collector.name'},{title:'Người phát hành',key:'issuer.name'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'payment.amount',align:'end'},{title:'Ngày phát hành',key:'issued_at'},{title:'Trạng thái',key:'status'},{title:'Thao tác',key:'actions',align:'end',sortable:false}]" :items="invoiceData.items.data || []" :loading="busy" hover items-per-page="15">
+                <template #[`item.payment.collector.name`]="{ item }">{{ (item as any).payment?.collector?.name || '—' }}</template>
+                <template #[`item.issuer.name`]="{ item }">{{ (item as any).issuer?.name || '—' }}</template>
                 <template #item.invoice_no="{ value }"><span v-if="value" class="font-weight-bold text-primary">{{ value }}</span><span v-else class="text-medium-emphasis">—</span></template>
                 <template #item.household="{ item }"><div class="py-2"><div class="font-weight-medium">{{ invoiceHousehold(item)?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ invoiceHousehold(item)?.code }} · {{ invoiceHousehold(item)?.phone || 'Chưa có SĐT' }}</div></div></template>
                 <template #item.period="{ item }"><span class="text-no-wrap">{{ invoicePeriod(item) }}</span></template>
@@ -940,6 +942,8 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <th>Mã phiếu</th>
                         <th>Số hóa đơn</th>
                         <th>Hộ dân</th>
+                        <th>Người thu</th>
+                        <th>Người phát hành</th>
                         <th>Khoảng thu</th>
                         <th>Số tiền</th>
                         <th>Trạng thái</th>
@@ -951,6 +955,8 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <td class="font-weight-medium">{{ row.code }}</td>
                         <td><span v-if="row.invoice?.invoice_no" class="font-weight-medium text-primary">{{ row.invoice.invoice_no }}</span><span v-else class="text-medium-emphasis">—</span></td>
                         <td>{{ row.household?.owner_name }}</td>
+                        <td>{{ row.collector?.name || '—' }}</td>
+                        <td>{{ row.invoice?.issuer?.name || '—' }}</td>
                         <td>{{ monthLabel(row.from_month?.slice(0, 7)) }} → {{ monthLabel(row.to_month?.slice(0, 7)) }}</td>
                         <td class="font-weight-bold">{{ money(row.amount) }}</td>
                         <td>

@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
-use App\Models\Menu;
 use App\Models\AuditLog;
+use App\Models\Menu;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +21,7 @@ class AuthController extends Controller
         $user = User::query()->where('username', $identifier)->orWhere('identity_number', $identifier)->first();
         if (! $user || ! $user->is_active || ! Hash::check($request->password, $user->password)) {
             AuditLog::create(['user_id' => $user?->id, 'action' => 'LOGIN_FAILED', 'entity_type' => User::class, 'entity_id' => $user?->id, 'new_values' => ['identifier' => $identifier], 'ip_address' => $request->ip()]);
+
             return response()->json(['success' => false, 'message' => 'Tài khoản, số CCCD hoặc mật khẩu không đúng.', 'data' => null], 422);
         }
 
@@ -59,7 +60,9 @@ class AuthController extends Controller
 
         $removeAvatar = $request->boolean('remove_avatar');
         unset($data['current_password'], $data['password_confirmation'], $data['remove_avatar'], $data['avatar']);
-        if (empty($data['password'])) unset($data['password']);
+        if (empty($data['password'])) {
+            unset($data['password']);
+        }
 
         if (($request->hasFile('avatar') || $removeAvatar) && $user->avatar) {
             Storage::disk('public')->delete($user->avatar);
@@ -83,13 +86,31 @@ class AuthController extends Controller
         return response()->json(['success' => true, 'message' => 'Đã đăng xuất.', 'data' => null]);
     }
 
+    public function changePassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', 'string', 'min:8', 'different:current_password', 'confirmed'],
+        ], [
+            'current_password.current_password' => 'Mật khẩu hiện tại không đúng.',
+            'password.different' => 'Mật khẩu mới phải khác mật khẩu hiện tại.',
+            'password.confirmed' => 'Xác nhận mật khẩu mới không khớp.',
+        ]);
+        $request->user()->update(['password' => $data['password']]);
+        AuditLog::create(['user_id' => $request->user()->id, 'action' => 'CHANGE_PASSWORD', 'entity_type' => User::class, 'entity_id' => $request->user()->id, 'new_values' => ['password_changed' => true], 'ip_address' => $request->ip()]);
+
+        return response()->json(['success' => true, 'message' => 'Đổi mật khẩu thành công.', 'data' => null]);
+    }
+
     private function profileData(User $user): array
     {
         $permissions = $user->permissions();
         $assignedMenuIds = $user->menus()->pluck('menus.id');
         $leafQuery = Menu::query()->where('is_active', true)->whereNotNull('permission_code')
             ->whereIn('permission_code', $permissions);
-        if ($user->menu_access_custom) $leafQuery->whereIn('id', $assignedMenuIds);
+        if ($user->menu_access_custom) {
+            $leafQuery->whereIn('id', $assignedMenuIds);
+        }
         $leaves = $leafQuery->orderBy('sort_order')->get();
         $parentIds = $leaves->pluck('parent_id')->filter()->unique();
         $parents = Menu::query()->whereIn('id', $parentIds)->where('is_active', true)->orderBy('sort_order')->get();
@@ -99,7 +120,9 @@ class AuthController extends Controller
             ->orderBy('sort_order')->get()->map(fn ($menu) => [...$menu->toArray(), 'children' => []]);
         foreach ($parents as $parent) {
             $children = $leaves->where('parent_id', $parent->id)->values();
-            if ($children->isNotEmpty()) $menus->push([...$parent->toArray(), 'children' => $children]);
+            if ($children->isNotEmpty()) {
+                $menus->push([...$parent->toArray(), 'children' => $children]);
+            }
         }
         $menus = $menus->sortBy('sort_order')->values();
 

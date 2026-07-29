@@ -17,7 +17,7 @@ class PaymentController extends Controller
 
     public function index(Request $r): JsonResponse
     {
-        $query = Payment::with(['household.route', 'invoice']);
+        $query = Payment::with(['household.route', 'collector:id,name', 'invoice.issuer:id,name']);
         if ($r->filled('collection_route_id')) {
             $query->whereHas('household', fn ($household) => $household->where('collection_route_id', $r->integer('collection_route_id')));
         }

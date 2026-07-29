@@ -10,7 +10,7 @@ class VnptInvoiceService
 {
     public function __construct(private readonly InvoiceSettingService $settingService) {}
 
-    public function publish(Payment $payment): array
+    public function publish(Payment $payment, ?int $issuerId = null): array
     {
         $payment->loadMissing(['household.services.service', 'invoice']);
         $invoice = $payment->invoice;
@@ -41,7 +41,7 @@ class VnptInvoiceService
             $invoice->update(['status' => 'PHAT_HANH_LOI', 'provider_response' => $last]);
             throw ValidationException::withMessages(['invoice' => $last['message'] ?? 'Không thể phát hành hóa đơn VNPT.']);
         }
-        $invoice->update(['status' => 'DA_PHAT_HANH', 'invoice_no' => $last['invoice_no'], 'provider_response' => $last, 'issued_at' => now()]);
+        $invoice->update(['status' => 'DA_PHAT_HANH', 'invoice_no' => $last['invoice_no'], 'provider_response' => $last, 'issued_at' => now(), 'issued_by' => $issuerId]);
         $payment->update(['status' => 'DA_PHAT_HANH_HOA_DON']);
 
         return ['payment_id' => $payment->id, 'invoice_id' => $invoice->id, ...$last];

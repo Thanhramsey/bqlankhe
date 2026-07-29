@@ -1,0 +1,23 @@
+name: bqlankhe_collector
+description: Ứng dụng thu tiền rác Ban Quản lý phường An Khê
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+dependencies:
+  flutter: {sdk: flutter}
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.8.1
+  dio: ^5.8.0+1
+  flutter_secure_storage: ^9.2.4
+  shared_preferences: ^2.5.3
+  intl: ^0.20.2
+  url_launcher: ^6.3.1
+  cached_network_image: ^3.4.1
+  path_provider: ^2.1.5
+  open_filex: ^4.7.0
+dev_dependencies:
+  flutter_test: {sdk: flutter}
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true

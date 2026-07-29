@@ -1,29 +1,48 @@
 <?php
 
-use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CrudController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DebtController;
+use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\HouseholdController;
 use App\Http\Controllers\Api\HouseholdExcelController;
+use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceSettingController;
-use App\Http\Controllers\Api\PaymentController;
-use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\RouteExcelController;
-use App\Http\Controllers\Api\ReportController;
-use App\Http\Controllers\Api\InventoryController;
-use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\MobileController;
 use App\Http\Controllers\Api\OperatingDirectiveController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\RouteExcelController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
     Route::middleware('auth:sanctum')->group(function () {
+        Route::prefix('mobile')->group(function () {
+            Route::get('routes', [MobileController::class, 'routes'])->middleware('permission:payments.view');
+            Route::get('households', [MobileController::class, 'households'])->middleware('permission:payments.view');
+            Route::get('routes/{route}/households', [MobileController::class, 'households'])->middleware('permission:payments.view');
+            Route::get('households/{household}', [MobileController::class, 'household'])->middleware('permission:payments.view');
+            Route::get('households/{household}/payment-history', [MobileController::class, 'history'])->middleware('permission:payments.view');
+            Route::get('households/{household}/payment-suggestion', [MobileController::class, 'suggestion'])->middleware('permission:payments.create');
+            Route::post('payments/preview', [MobileController::class, 'preview'])->middleware('permission:payments.create');
+            Route::post('payments', [MobileController::class, 'collect'])->middleware('permission:payments.create');
+            Route::get('payments', [MobileController::class, 'transactions'])->middleware('permission:payments.view');
+            Route::get('payments/{payment}', [MobileController::class, 'transaction'])->middleware('permission:payments.view');
+            Route::post('payments/{payment}/issue-invoice', [MobileController::class, 'issueInvoice'])->middleware('permission:payments.create');
+            Route::post('payments/{payment}/retry-invoice', [MobileController::class, 'issueInvoice'])->middleware('permission:payments.create');
+            Route::get('payments/{payment}/receipt', [MobileController::class, 'receipt'])->middleware('permission:payments.view');
+            Route::get('payments/{payment}/invoice', [MobileController::class, 'invoice'])->middleware('permission:payments.view');
+            Route::get('statistics/summary', [MobileController::class, 'statistics'])->middleware('permission:payments.view');
+        });
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::post('auth/profile', [AuthController::class, 'updateProfile']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
+        Route::post('auth/change-password', [AuthController::class, 'changePassword']);
         Route::get('dashboard', DashboardController::class)->middleware('permission:dashboard.view');
         Route::prefix('inventory')->middleware('permission:inventory.manage')->group(function () {
             Route::get('options', [InventoryController::class, 'options']);

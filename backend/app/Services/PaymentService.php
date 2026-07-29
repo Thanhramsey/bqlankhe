@@ -9,12 +9,49 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymentMonth;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PaymentService
 {
+    public function preview(array $data): array
+    {
+        $from = CarbonImmutable::createFromFormat('Y-m', $data['from_month'])->startOfMonth();
+        $to = CarbonImmutable::createFromFormat('Y-m', $data['to_month'])->startOfMonth();
+        $household = Household::with(['services' => fn ($query) => $query->where('is_active', true)->with('service')])
+            ->findOrFail($data['household_id']);
+        $items = collect();
+
+        for ($month = $from; $month->lte($to); $month = $month->addMonth()) {
+            foreach ($household->services as $subscription) {
+                if ($subscription->started_at->startOfMonth()->gt($month) || ($subscription->ended_at && $subscription->ended_at->startOfMonth()->lt($month))) {
+                    continue;
+                }
+                if (PaymentMonth::where('household_service_id', $subscription->id)->whereDate('month', $month)->exists()) {
+                    throw ValidationException::withMessages(['from_month' => 'Tháng '.$month->format('m/Y').' đã được thu.']);
+                }
+                $price = (float) $subscription->service->monthly_price;
+                $rate = (float) $subscription->service->tax_fee;
+                $tax = round($price * $rate / 100, 2);
+                $items->push(['month' => $month->format('Y-m'), 'service' => $subscription->service->name, 'price' => $price, 'tax_fee_rate' => $rate, 'tax_fee_amount' => $tax, 'amount' => $price + $tax]);
+            }
+        }
+
+        if ($items->isEmpty()) {
+            throw ValidationException::withMessages(['from_month' => 'Không có dịch vụ phát sinh trong khoảng tháng đã chọn.']);
+        }
+
+        return [
+            'household' => $household->only(['id', 'code', 'owner_name', 'address']),
+            'from_month' => $from->format('Y-m'), 'to_month' => $to->format('Y-m'),
+            'month_count' => $from->diffInMonths($to) + 1,
+            'subtotal' => round($items->sum('price'), 2),
+            'tax_fee' => round($items->sum('tax_fee_amount'), 2),
+            'total' => round($items->sum('amount'), 2), 'items' => $items,
+        ];
+    }
+
     public function collectMany(array $data, int $collectorId, ?string $ip = null): Collection
     {
         return DB::transaction(function () use ($data, $collectorId, $ip) {
