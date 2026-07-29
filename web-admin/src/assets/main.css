@@ -14,7 +14,32 @@ body { margin: 0; }
 .chart-bar:hover { opacity: .75; }
 .v-navigation-drawer .v-list-item { color: #bdd2c7; margin-bottom: 5px; }
 .v-navigation-drawer .v-list-item--active { color: white !important; background: rgba(255, 255, 255, .12); }
-.v-table th { font-size: 12px !important; text-transform: uppercase; letter-spacing: .04em; }
+.v-table > .v-table__wrapper > table > thead > tr > th,
+.v-data-table .v-data-table__thead > tr > th {
+  height: 48px !important;
+  padding: 0 16px !important;
+  color: rgb(var(--v-theme-primary)) !important;
+  background: rgba(var(--v-theme-primary), .075) !important;
+  border-bottom: 1px solid rgba(var(--v-theme-primary), .18) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+  white-space: nowrap;
+}
+.v-table > .v-table__wrapper > table > thead > tr > th + th,
+.v-data-table .v-data-table__thead > tr > th + th {
+  box-shadow: inset 1px 0 rgba(var(--v-theme-primary), .07);
+}
+.v-data-table .v-data-table-header__content {
+  gap: 6px;
+  font-weight: inherit;
+}
+.v-data-table .v-data-table-header__sort-icon {
+  color: rgb(var(--v-theme-primary));
+  opacity: .65;
+}
 .user-modal { overflow: hidden !important; }
 .user-modal__header { display: flex; align-items: center; justify-content: space-between; padding: 22px 26px; color: white; background: linear-gradient(135deg, #0f7044, #168451); }
 .user-modal__body { padding: 26px !important; background: rgba(var(--v-theme-surface-variant), .18); }
@@ -31,6 +56,20 @@ body { margin: 0; }
 .payment-step__label span { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; color: white; background: rgb(var(--v-theme-primary)); }
 .period-summary { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-radius: 10px; color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), .07); font-size: 13px; }
 .payment-cards { display: none; }
+.invoice-filters { width: min(100%, 900px); }
+.invoice-filters .v-text-field { min-width: 280px; }
+.invoice-filters .v-select { min-width: 190px; }
+.audit-json { min-height: 180px; max-height: 380px; overflow: auto; margin: 0; padding: 14px; border-radius: 10px; color: rgb(var(--v-theme-on-surface)); background: rgba(var(--v-theme-on-surface), .045); font: 12px/1.6 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 600px) { .v-container { padding: 14px !important; } .login-card { padding: 28px 22px !important; } }
 @media (max-width: 600px) { .user-modal__header, .user-modal__body { padding: 18px !important; } .avatar-panel { align-items: flex-start; gap: 14px; } .avatar-panel .v-avatar { width: 68px !important; height: 68px !important; } .form-section { padding: 16px 14px 2px; } .status-panel { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 700px) { .payment-table { display: none; } .payment-cards { display: block; } .payment-filter .v-select { max-width: none !important; width: 100%; } .payment-form-card__header { padding: 16px; } }
+@media (max-width: 700px) {
+  .invoice-filters, .invoice-filters .v-text-field, .invoice-filters .v-select { width: 100%; min-width: 0; }
+  .v-table > .v-table__wrapper > table > thead > tr > th,
+  .v-data-table .v-data-table__thead > tr > th {
+    height: 44px !important;
+    padding: 0 12px !important;
+    font-size: 11px !important;
+    letter-spacing: .035em;
+  }
+}

@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\CrudController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DebtController;
 use App\Http\Controllers\Api\HouseholdController;
 use App\Http\Controllers\Api\HouseholdExcelController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -16,12 +18,18 @@ Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('auth/me', [AuthController::class, 'me']);
+        Route::post('auth/profile', [AuthController::class, 'updateProfile']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('dashboard', DashboardController::class)->middleware('permission:dashboard.view');
+        Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:settings.manage');
         Route::get('payments', [PaymentController::class, 'index'])->middleware('permission:payments.view');
+        Route::get('debts', [DebtController::class, 'index'])->middleware('permission:payments.view');
+        Route::get('debts-export', [DebtController::class, 'export'])->middleware('permission:payments.view');
         Route::get('payments/options', [PaymentController::class, 'options'])->middleware('permission:payments.create');
         Route::post('payments', [PaymentController::class, 'store'])->middleware('permission:payments.create');
         Route::post('invoices/publish', [InvoiceController::class, 'publish'])->middleware('permission:payments.create');
+        Route::get('invoices', [InvoiceController::class, 'index'])->middleware('permission:payments.view');
+        Route::get('invoices-export', [InvoiceController::class, 'export'])->middleware('permission:payments.view');
         Route::get('payments/{payment}/receipt', [InvoiceController::class, 'receipt'])->middleware('permission:payments.view');
         Route::get('payments/{payment}/invoice', [InvoiceController::class, 'invoice'])->middleware('permission:payments.view');
         Route::get('invoice-settings', [InvoiceSettingController::class, 'index']);
@@ -30,6 +38,7 @@ Route::prefix('v1')->group(function () {
         Route::get('users/options', [UserController::class, 'options']);
         Route::apiResource('users', UserController::class)->except('show');
         Route::get('households-import/template', [HouseholdExcelController::class, 'template']);
+        Route::get('households-export', [HouseholdController::class, 'export']);
         Route::post('households-import', [HouseholdExcelController::class, 'import']);
         Route::get('households/options', [HouseholdController::class, 'options']);
         Route::get('households/{household}/payments', [HouseholdController::class, 'payments']);

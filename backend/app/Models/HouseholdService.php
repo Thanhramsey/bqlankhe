@@ -20,4 +20,9 @@ class HouseholdService extends Model
     {
         return $this->belongsTo(Service::class);
     }
+
+    public function paymentMonths()
+    {
+        return $this->hasMany(PaymentMonth::class);
+    }
 }

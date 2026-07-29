@@ -10,8 +10,10 @@ use App\Models\CollectionRoute;
 use App\Models\Household;
 use App\Models\Service;
 use App\Services\HouseholdService;
+use App\Services\ExcelExportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HouseholdController extends Controller
 {
@@ -56,6 +58,27 @@ class HouseholdController extends Controller
             'routes' => CollectionRoute::query()->where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'code', 'name', 'monthly_price', 'tax_fee']),
         ]]);
+    }
+
+    public function export(Request $request, ExcelExportService $excel): BinaryFileResponse
+    {
+        abort_unless($request->user()->hasPermission('households.manage'), 403);
+        $query = Household::query()->with(['route:id,code,name', 'services.service:id,code,name']);
+        if ($request->filled('search')) {
+            $term = '%'.trim((string) $request->input('search')).'%';
+            $query->where(fn ($query) => $query->whereAny(['code', 'owner_name', 'phone', 'identity_number', 'email', 'tax_code', 'representative', 'address'], 'like', $term));
+        }
+        if ($request->filled('collection_route_id')) $query->where('collection_route_id', $request->integer('collection_route_id'));
+        if ($request->filled('service_id')) $query->whereHas('services', fn ($service) => $service->where('service_id', $request->integer('service_id'))->where('is_active', true));
+        $households = $query->orderByRaw('sequence_number IS NULL')->orderBy('sequence_number')->orderBy('owner_name')->get();
+        $rows = $households->map(fn ($item, $index) => [
+            $index + 1, $item->sequence_number, $item->code, $item->owner_name, $item->phone, $item->address,
+            $item->identity_number, $item->route?->name, $item->services->first()?->service?->name,
+            $item->email, $item->tax_code, $item->representative, $item->note, $item->is_active ? 'Hoạt động' : 'Ngừng hoạt động',
+        ])->all();
+        $path = $excel->create('Danh sách hộ dân', ['STT', 'Số thứ tự', 'Mã hộ', 'Họ tên', 'Số điện thoại', 'Địa chỉ', 'CCCD', 'Tuyến thu', 'Loại dịch vụ', 'Email', 'Mã số thuế', 'Người đại diện', 'Ghi chú', 'Trạng thái'], $rows, [8, 12, 16, 25, 17, 38, 20, 24, 28, 28, 20, 24, 30, 18]);
+        AuditLog::create(['user_id' => $request->user()->id, 'action' => 'EXPORT_HOUSEHOLDS', 'entity_type' => Household::class, 'new_values' => ['total' => count($rows)], 'ip_address' => $request->ip()]);
+        return response()->download($path, 'danh-sach-ho-dan-'.now()->format('Ymd-His').'.xlsx')->deleteFileAfterSend();
     }
 
     public function store(SaveHouseholdRequest $request): JsonResponse

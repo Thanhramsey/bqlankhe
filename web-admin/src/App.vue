@@ -43,7 +43,24 @@ const historyLoading = ref(false)
 const paymentSubmitting = ref(false)
 const invoiceBusy = ref(false)
 const invoiceSettings = ref<any[]>([])
+const invoiceData = ref<any>({ items: { data: [] }, summary: {}, routes: [] })
+const invoiceSearch = ref('')
+const invoiceStatusFilter = ref<string | null>(null)
+const invoiceRouteFilter = ref<number | null>(null)
+const auditData = ref<any>({ logs: { data: [] }, users: [], actions: [] })
+const auditSearch = ref('')
+const auditFilters = reactive({ action: null as string | null, user_id: null as number | null, from_date: '', to_date: '' })
+const auditDetail = ref<any>(null)
+const auditModal = ref(false)
+const debtData = ref<any>({ summary: {}, items: [], options: { routes: [], collectors: [] } })
+const debtFilters = reactive({ collection_route_id: null as number | null, collector_id: null as number | null, from_month: '', to_month: new Date().toISOString().slice(0, 7), over_six_months: false })
 const settingsSaving = ref(false)
+const exportBusy = ref(false)
+const profileModal = ref(false)
+const profileSaving = ref(false)
+const profileAvatarFile = ref<File | null>(null)
+const profileAvatarPreview = ref('')
+const profileForm = reactive<Record<string, any>>({})
 const showDeleted = ref(false)
 const dashboard = ref<any>({})
 const credentials = reactive({ identifier: 'admin', password: 'Admin@123' })
@@ -177,6 +194,12 @@ const pageTitle = computed(() =>
     ? 'Tổng quan'
     : page.value === '/payments'
       ? 'Thu phí'
+      : page.value === '/invoices'
+        ? 'Quản lý hóa đơn điện tử'
+      : page.value === '/audit-logs'
+        ? 'Log hệ thống'
+      : page.value === '/debts'
+        ? 'Quản lý công nợ'
       : config.value?.title || 'Quản lý',
 )
 const menuIcons: Record<string, string> = {
@@ -185,6 +208,9 @@ const menuIcons: Record<string, string> = {
   '/services': 'mdi-recycle-variant',
   '/routes': 'mdi-map-marker-path',
   '/payments': 'mdi-wallet-outline',
+  '/invoices': 'mdi-receipt-text-check-outline',
+  '/audit-logs': 'mdi-history',
+  '/debts': 'mdi-alert-circle-outline',
   '/users': 'mdi-account-group-outline',
   '/settings': 'mdi-cog-outline',
 }
@@ -196,6 +222,18 @@ const paymentHouseholdOptions = computed(() => households.value.map((household) 
   ...household,
   payment_label: `${household.code || 'Chưa có mã'} — ${household.owner_name || 'Chưa có tên'} · ${household.address || 'Chưa có địa chỉ'}`,
 })))
+const debtKpis = computed(() => [
+  { label: 'Hộ đang nợ', value: debtData.value.summary.households_in_debt || 0, icon: 'mdi-home-alert-outline', color: 'warning' },
+  { label: 'Tổng tiền nợ', value: money(debtData.value.summary.total_debt), icon: 'mdi-cash-remove', color: 'error' },
+  { label: 'Tổng tháng còn nợ', value: debtData.value.summary.total_debt_months || 0, icon: 'mdi-calendar-alert', color: 'info' },
+  { label: 'Nợ trên 6 tháng', value: debtData.value.summary.over_six_months || 0, icon: 'mdi-alert-decagram-outline', color: 'error' },
+])
+const invoiceKpis = computed(() => [
+  { label: 'Tổng hóa đơn', value: invoiceData.value.summary.total || 0, icon: 'mdi-receipt-text-outline', color: 'primary' },
+  { label: 'Chờ phát hành', value: invoiceData.value.summary.pending || 0, icon: 'mdi-clock-outline', color: 'warning' },
+  { label: 'Đã phát hành', value: invoiceData.value.summary.published || 0, icon: 'mdi-check-decagram-outline', color: 'success' },
+  { label: 'Lỗi phát hành', value: invoiceData.value.summary.failed || 0, icon: 'mdi-alert-circle-outline', color: 'error' },
+])
 const kpis = computed(() => [
   {
     label: 'Hộ đang quản lý',
@@ -231,6 +269,12 @@ function money(value: any) {
 function monthLabel(value: string) {
   return value ? `${value.slice(5, 7)}/${value.slice(0, 4)}` : '—'
 }
+function debtCollectors(item: any) {
+  return item?.collectors?.map((collector: any) => collector.name).join(', ') || '—'
+}
+function debtPeriod(item: any) {
+  return `${monthLabel(item?.oldest_debt_month)} – ${monthLabel(item?.latest_debt_month)}`
+}
 function notify(message: string) {
   snackbarText.value = message
   snackbar.value = true
@@ -239,6 +283,38 @@ function toggleTheme() {
   const isDark = theme.global.current.value.dark
   theme.global.name.value = isDark ? 'ankheLight' : 'ankheDark'
   localStorage.setItem('theme', isDark ? 'light' : 'dark')
+}
+function openProfile() {
+  Object.assign(profileForm, {
+    name: auth.user?.name || '', email: auth.user?.email || '', phone: auth.user?.phone || '',
+    date_of_birth: auth.user?.date_of_birth || '', gender: auth.user?.gender || null,
+    identity_number: auth.user?.identity_number || '', address: auth.user?.address || '',
+    current_password: '', password: '', password_confirmation: '', remove_avatar: false,
+  })
+  profileAvatarFile.value = null
+  profileAvatarPreview.value = auth.user?.avatar_url || ''
+  profileModal.value = true
+}
+function removeProfileAvatar() {
+  profileAvatarFile.value = null
+  profileAvatarPreview.value = ''
+  profileForm.remove_avatar = true
+}
+async function saveProfile() {
+  profileSaving.value = true
+  error.value = ''
+  try {
+    const form = new FormData()
+    Object.entries(profileForm).forEach(([key, value]) => {
+      if (value !== null && value !== '') form.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value))
+    })
+    if (profileAvatarFile.value) form.set('avatar', profileAvatarFile.value)
+    const response = await api<any>('/auth/profile', { method: 'POST', body: form })
+    auth.user = response.data
+    profileModal.value = false
+    notify(response.message)
+  } catch (e: any) { error.value = e.message }
+  finally { profileSaving.value = false }
 }
 async function login() {
   error.value = ''
@@ -266,6 +342,21 @@ async function load() {
       rows.value = paymentsResponse.data.data
       households.value = optionsResponse.data.households
       routeOptions.value.routes = optionsResponse.data.routes || []
+    } else if (page.value === '/invoices') {
+      const params = new URLSearchParams({ per_page: '100' })
+      if (invoiceSearch.value.trim()) params.set('search', invoiceSearch.value.trim())
+      if (invoiceStatusFilter.value) params.set('status', invoiceStatusFilter.value)
+      if (invoiceRouteFilter.value) params.set('collection_route_id', String(invoiceRouteFilter.value))
+      invoiceData.value = (await api<any>(`/invoices?${params.toString()}`)).data
+    } else if (page.value === '/audit-logs') {
+      const params = new URLSearchParams({ per_page: '100' })
+      if (auditSearch.value.trim()) params.set('search', auditSearch.value.trim())
+      Object.entries(auditFilters).forEach(([key, value]) => { if (value !== null && value !== '') params.set(key, String(value)) })
+      auditData.value = (await api<any>(`/audit-logs?${params.toString()}`)).data
+    } else if (page.value === '/debts') {
+      const params = new URLSearchParams()
+      Object.entries(debtFilters).forEach(([key, value]) => { if (value !== null && value !== '' && value !== false) params.set(key, String(value === true ? 1 : value)) })
+      debtData.value = (await api<any>(`/debts?${params.toString()}`)).data
     } else if (page.value === '/settings') {
       invoiceSettings.value = (await api<any>('/invoice-settings')).data
     } else if (config.value) {
@@ -385,7 +476,7 @@ async function publishInvoices(paymentIds: number[], reload = true) {
     if (failures.length) throw new Error(failures.map((item:any) => item.message).join('\n'))
     notify(result.message)
     if (reload) await load()
-  } catch (e:any) { error.value = e.message; throw e }
+  } catch (e:any) { error.value = e.message; if (reload) await load(); throw e }
   finally { invoiceBusy.value = false }
 }
 async function openPaymentPdf(paymentId: number, type: 'receipt' | 'invoice') {
@@ -402,6 +493,32 @@ async function openPaymentPdf(paymentId: number, type: 'receipt' | 'invoice') {
 function invoiceStatus(invoice: any) {
   return ({ CHO_PHAT_HANH: ['Chờ phát hành', 'warning'], DANG_PHAT_HANH: ['Đang phát hành', 'info'], DA_PHAT_HANH: ['Đã phát hành', 'success'], PHAT_HANH_LOI: ['Phát hành lỗi', 'error'] } as Record<string,string[]>)[invoice?.status] || ['Chưa có', 'default']
 }
+function canPublishInvoice(invoice: any) {
+  return auth.user?.permissions.includes('payments.create') && ['CHO_PHAT_HANH', 'PHAT_HANH_LOI'].includes(invoice?.status)
+}
+function invoiceHousehold(invoice: any) { return invoice?.payment?.household }
+function invoicePeriod(invoice: any) { return `${monthLabel(invoice?.payment?.from_month?.slice(0, 7))} – ${monthLabel(invoice?.payment?.to_month?.slice(0, 7))}` }
+function invoicePaymentId(invoice: any) { return Number(invoice?.payment_id) }
+function invoiceIsFailed(invoice: any) { return invoice?.status === 'PHAT_HANH_LOI' }
+function invoiceIsPublished(invoice: any) { return invoice?.status === 'DA_PHAT_HANH' }
+const auditActionLabels: Record<string, [string, string, string]> = {
+  LOGIN: ['Đăng nhập', 'success', 'mdi-login'], LOGIN_FAILED: ['Đăng nhập thất bại', 'error', 'mdi-login-variant'], LOGOUT: ['Đăng xuất', 'info', 'mdi-logout'],
+  COLLECT_PAYMENT: ['Thu tiền', 'success', 'mdi-cash-check'], CREATE: ['Thêm mới', 'primary', 'mdi-plus-circle-outline'], UPDATE: ['Chỉnh sửa', 'warning', 'mdi-pencil-outline'], DELETE: ['Xóa', 'error', 'mdi-delete-outline'], RESTORE: ['Khôi phục', 'success', 'mdi-backup-restore'],
+  CHANGE_PRICE: ['Đổi giá', 'warning', 'mdi-cash-edit'], PUBLISH_INVOICE: ['Xuất hóa đơn', 'success', 'mdi-receipt-text-check-outline'], PUBLISH_INVOICE_FAILED: ['Xuất hóa đơn lỗi', 'error', 'mdi-receipt-text-remove-outline'],
+  IMPORT_HOUSEHOLDS: ['Import hộ dân', 'info', 'mdi-file-excel-outline'], IMPORT_ROUTES: ['Import tuyến thu', 'info', 'mdi-file-excel-outline'], CHANGE_PASSWORD: ['Đổi mật khẩu', 'warning', 'mdi-lock-reset'], UPDATE_PROFILE: ['Sửa hồ sơ', 'info', 'mdi-account-edit-outline'],
+  EXPORT_HOUSEHOLDS: ['Xuất DS hộ dân', 'success', 'mdi-microsoft-excel'], EXPORT_DEBTS: ['Xuất DS chưa thu', 'success', 'mdi-microsoft-excel'], EXPORT_INVOICES: ['Xuất DS hóa đơn', 'success', 'mdi-microsoft-excel'],
+}
+function auditAction(action: string) { return auditActionLabels[action] || [action, 'default', 'mdi-history'] }
+const auditActionOptions = computed(() => auditData.value.actions.map((action: string) => ({ title: auditAction(action)[0], value: action })))
+function auditActionFor(log: any) { return auditAction(log?.action) }
+function auditEntityFor(log: any) { return `${auditEntity(log?.entity_type)}${log?.entity_id ? ` #${log.entity_id}` : ''}` }
+function auditEntity(type: string) {
+  const entity = type?.split('\\').pop() || 'Hệ thống'
+  return ({ Household: 'Hộ dân', Payment: 'Phiếu thu', Service: 'Dịch vụ', Invoice: 'Hóa đơn', User: 'Người dùng', CollectionRoute: 'Tuyến thu' } as Record<string,string>)[entity] || entity
+}
+function auditUser(log: any) { return log?.user }
+function showAuditDetail(log: any) { auditDetail.value = log; auditModal.value = true }
+function prettyJson(value: any) { return value ? JSON.stringify(value, null, 2) : 'Không có dữ liệu' }
 async function saveInvoiceSettings() {
   settingsSaving.value = true
   try {
@@ -442,6 +559,40 @@ async function downloadHouseholdTemplate() {
   if (!response.ok) { error.value = 'Không thể tải file mẫu hộ dân.'; return }
   const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'mau-import-ho-dan.xlsx'; link.click(); URL.revokeObjectURL(url)
 }
+async function downloadExport(path: string, fallbackName: string) {
+  exportBusy.value = true
+  error.value = ''
+  try {
+    const token = localStorage.getItem('token'); const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+    const response = await fetch(`${base}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!response.ok) throw new Error((await response.json()).message || 'Không thể xuất file Excel.')
+    const disposition = response.headers.get('content-disposition') || ''
+    const fileName = decodeURIComponent(disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)/i)?.[1] || fallbackName)
+    const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a')
+    link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url)
+    notify('Đã xuất file Excel')
+  } catch (e:any) { error.value = e.message }
+  finally { exportBusy.value = false }
+}
+function exportHouseholds() {
+  const params = new URLSearchParams()
+  if (search.value.trim()) params.set('search', search.value.trim())
+  if (householdRouteFilter.value) params.set('collection_route_id', String(householdRouteFilter.value))
+  if (householdServiceFilter.value) params.set('service_id', String(householdServiceFilter.value))
+  return downloadExport(`/households-export?${params}`, 'danh-sach-ho-dan.xlsx')
+}
+function exportDebts() {
+  const params = new URLSearchParams()
+  Object.entries(debtFilters).forEach(([key, value]) => { if (value !== null && value !== '' && value !== false) params.set(key, String(value === true ? 1 : value)) })
+  return downloadExport(`/debts-export?${params}`, 'danh-sach-chua-thu.xlsx')
+}
+function exportInvoices() {
+  const params = new URLSearchParams()
+  if (invoiceSearch.value.trim()) params.set('search', invoiceSearch.value.trim())
+  if (invoiceStatusFilter.value) params.set('status', invoiceStatusFilter.value)
+  if (invoiceRouteFilter.value) params.set('collection_route_id', String(invoiceRouteFilter.value))
+  return downloadExport(`/invoices-export?${params}`, 'danh-sach-hoa-don-dien-tu.xlsx')
+}
 async function showPaymentHistory(household: any) {
   historyHousehold.value = household
   historyModal.value = true
@@ -452,11 +603,25 @@ async function showPaymentHistory(household: any) {
 }
 
 let searchTimer: ReturnType<typeof setTimeout>
+let invoiceSearchTimer: ReturnType<typeof setTimeout>
+let auditSearchTimer: ReturnType<typeof setTimeout>
 watch(() => route.path, load)
 watch(search, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 350)
 })
+watch(invoiceSearch, () => {
+  if (page.value !== '/invoices') return
+  clearTimeout(invoiceSearchTimer)
+  invoiceSearchTimer = setTimeout(load, 350)
+})
+watch([invoiceStatusFilter, invoiceRouteFilter], () => { if (page.value === '/invoices') load() })
+watch(auditSearch, () => {
+  if (page.value !== '/audit-logs') return
+  clearTimeout(auditSearchTimer)
+  auditSearchTimer = setTimeout(load, 350)
+})
+watch(() => [auditFilters.action, auditFilters.user_id], () => { if (page.value === '/audit-logs') load() })
 watch(showDeleted, load)
 watch([householdRouteFilter, householdServiceFilter], load)
 watch(paymentRouteFilter, () => {
@@ -479,6 +644,11 @@ watch(() => payment.household_ids, async (householdIds) => {
 watch(avatarFile, (file) => {
   if (avatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(avatarPreview.value)
   avatarPreview.value = file ? URL.createObjectURL(file) : editing.value.avatar_url || ''
+})
+watch(profileAvatarFile, (file) => {
+  if (profileAvatarPreview.value.startsWith('blob:')) URL.revokeObjectURL(profileAvatarPreview.value)
+  profileAvatarPreview.value = file ? URL.createObjectURL(file) : (profileForm.remove_avatar ? '' : auth.user?.avatar_url || '')
+  if (file) profileForm.remove_avatar = false
 })
 onMounted(async () => {
   await auth.restore()
@@ -552,7 +722,7 @@ onMounted(async () => {
           <div class="pa-4">
             <v-card color="rgba(255,255,255,.08)" class="pa-3"
               ><div class="d-flex align-center ga-3">
-                <v-avatar color="secondary">{{ auth.user.name[0] }}</v-avatar>
+                <v-avatar color="secondary" :image="auth.user.avatar_url || undefined"><span v-if="!auth.user.avatar_url">{{ auth.user.name[0] }}</span></v-avatar>
                 <div class="overflow-hidden">
                   <div class="text-body-2 font-weight-bold text-white text-truncate">
                     {{ auth.user.name }}
@@ -585,11 +755,11 @@ onMounted(async () => {
         <v-btn icon="mdi-theme-light-dark" variant="text" @click="toggleTheme" />
         <v-menu
           ><template #activator="{ props }"
-            ><v-btn v-bind="props" icon="mdi-account-circle-outline" variant="text" /></template
-          ><v-list
-            ><v-list-item
+            ><v-btn v-bind="props" icon variant="text"><v-avatar size="36" color="primary" variant="tonal" :image="auth.user.avatar_url || undefined"><span v-if="!auth.user.avatar_url" class="font-weight-bold">{{ auth.user.name?.[0]?.toUpperCase() }}</span></v-avatar></v-btn></template
+          ><v-list min-width="230"
+            ><v-list-item :title="auth.user.name" :subtitle="auth.user.email"><template #prepend><v-avatar size="38" color="primary" variant="tonal" :image="auth.user.avatar_url || undefined"><span v-if="!auth.user.avatar_url">{{ auth.user.name?.[0]?.toUpperCase() }}</span></v-avatar></template></v-list-item><v-divider class="my-2" /><v-list-item prepend-icon="mdi-account-edit-outline" title="Thông tin cá nhân" @click="openProfile" /><v-list-item
               prepend-icon="mdi-logout"
-              title="Đăng xuất"
+              title="Đăng xuất" base-color="error"
               @click="auth.logout" /></v-list
         ></v-menu>
       </v-app-bar>
@@ -637,6 +807,37 @@ onMounted(async () => {
                   :title="`${point.date}: ${money(point.total)}`"
                 /></div
             ></v-card>
+          </template>
+
+          <template v-else-if="page === '/audit-logs'">
+            <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex align-center ga-3 mb-4"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-shield-search-outline" /></v-avatar><div><div class="font-weight-bold">Tra cứu nhật ký hoạt động</div><div class="text-caption text-medium-emphasis">Theo dõi người thực hiện, thao tác, thời gian và địa chỉ IP</div></div></div><v-row dense><v-col cols="12" md="4"><v-text-field v-model="auditSearch" label="Tìm người dùng, hành động, IP..." prepend-inner-icon="mdi-magnify" clearable hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-select v-model="auditFilters.action" :items="auditActionOptions" label="Tất cả hành động" clearable hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-select v-model="auditFilters.user_id" :items="auditData.users" item-title="name" item-value="id" label="Tất cả người dùng" clearable hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="auditFilters.from_date" type="date" label="Từ ngày" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="auditFilters.to_date" type="date" label="Đến ngày" hide-details /></v-col></v-row><div class="d-flex justify-end mt-4"><v-btn color="primary" prepend-icon="mdi-filter-check-outline" :loading="busy" @click="load">Áp dụng thời gian</v-btn></div></v-card>
+            <v-card border rounded="xl"><div class="d-flex align-center justify-space-between pa-5"><div><div class="text-h6 font-weight-bold">Nhật ký hệ thống</div><div class="text-caption text-medium-emphasis">{{ auditData.logs.total || auditData.logs.data?.length || 0 }} hoạt động được ghi nhận</div></div><v-btn icon="mdi-refresh" color="primary" variant="tonal" title="Tải lại" :loading="busy" @click="load" /></div><v-divider /><v-data-table :headers="[{title:'Thời gian',key:'created_at'},{title:'Người thực hiện',key:'user.name'},{title:'Hành động',key:'action'},{title:'Đối tượng',key:'entity'},{title:'Địa chỉ IP',key:'ip_address'},{title:'Chi tiết',key:'actions',align:'end',sortable:false}]" :items="auditData.logs.data || []" :loading="busy" :sort-by="[{key:'created_at',order:'desc'}]" hover items-per-page="20"><template #item.created_at="{ value }"><span class="text-no-wrap">{{ new Date(value).toLocaleString('vi-VN') }}</span></template><template #[`item.user.name`]="{ item }"><div><div class="font-weight-medium">{{ auditUser(item)?.name || 'Không xác định' }}</div><div class="text-caption text-medium-emphasis">{{ auditUser(item)?.username || '—' }}</div></div></template><template #item.action="{ item }"><v-chip :color="auditActionFor(item)[1]" :prepend-icon="auditActionFor(item)[2]" size="small" variant="tonal" class="font-weight-medium">{{ auditActionFor(item)[0] }}</v-chip></template><template #item.entity="{ item }">{{ auditEntityFor(item) }}</template><template #item.ip_address="{ value }"><code>{{ value || '—' }}</code></template><template #item.actions="{ item }"><v-btn icon="mdi-eye-outline" size="small" color="primary" variant="text" title="Xem chi tiết" @click="showAuditDetail(item)" /></template><template #no-data><div class="empty-state"><v-icon icon="mdi-history" size="52" /><div class="mt-2">Chưa có nhật ký phù hợp</div></div></template></v-data-table></v-card>
+          </template>
+
+          <template v-else-if="page === '/invoices'">
+            <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex flex-column flex-md-row align-md-center justify-space-between ga-4"><div class="d-flex align-center ga-3"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-file-search-outline" /></v-avatar><div><div class="font-weight-bold">Tra cứu hóa đơn</div><div class="text-caption text-medium-emphasis">Tìm theo số hóa đơn, mã phiếu, mã hộ, tên hoặc số điện thoại</div></div></div><div class="d-flex flex-column flex-sm-row ga-3 invoice-filters"><v-text-field v-model="invoiceSearch" label="Nhập thông tin tra cứu" prepend-inner-icon="mdi-magnify" clearable hide-details /><v-select v-model="invoiceStatusFilter" :items="[{title:'Chờ phát hành',value:'CHO_PHAT_HANH'},{title:'Đã phát hành',value:'DA_PHAT_HANH'},{title:'Lỗi phát hành',value:'PHAT_HANH_LOI'}]" label="Tất cả trạng thái" clearable hide-details /><v-select v-model="invoiceRouteFilter" :items="invoiceData.routes" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" clearable hide-details /></div></div></v-card>
+            <v-row class="mb-1"><v-col v-for="item in invoiceKpis" :key="item.label" cols="12" sm="6" lg="3"><v-card class="kpi-card pa-4 h-100" border rounded="xl"><div class="d-flex justify-space-between align-center"><div><div class="text-caption text-medium-emphasis mb-1">{{ item.label }}</div><div class="text-h6 font-weight-bold">{{ item.value }}</div></div><v-avatar :color="item.color" variant="tonal" rounded="lg"><v-icon :icon="item.icon" /></v-avatar></div></v-card></v-col></v-row>
+            <v-card border rounded="xl">
+              <div class="d-flex align-center justify-space-between pa-5 ga-3"><div><div class="text-h6 font-weight-bold">Danh sách hóa đơn</div><div class="text-caption text-medium-emphasis">Hóa đơn được tạo tự động sau khi lập phiếu thu</div></div><div class="d-flex ga-2"><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportInvoices">Export Excel</v-btn><v-btn icon="mdi-refresh" variant="tonal" color="primary" title="Tải lại" :loading="busy" @click="load" /></div></div>
+              <v-divider />
+              <v-data-table :headers="[{title:'Mã phiếu',key:'payment.code'},{title:'Số hóa đơn',key:'invoice_no'},{title:'Hộ dân',key:'household'},{title:'Tuyến thu',key:'payment.household.route.name'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'payment.amount',align:'end'},{title:'Ngày phát hành',key:'issued_at'},{title:'Trạng thái',key:'status'},{title:'Thao tác',key:'actions',align:'end',sortable:false}]" :items="invoiceData.items.data || []" :loading="busy" hover items-per-page="15">
+                <template #item.invoice_no="{ value }"><span v-if="value" class="font-weight-bold text-primary">{{ value }}</span><span v-else class="text-medium-emphasis">—</span></template>
+                <template #item.household="{ item }"><div class="py-2"><div class="font-weight-medium">{{ invoiceHousehold(item)?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ invoiceHousehold(item)?.code }} · {{ invoiceHousehold(item)?.phone || 'Chưa có SĐT' }}</div></div></template>
+                <template #item.period="{ item }"><span class="text-no-wrap">{{ invoicePeriod(item) }}</span></template>
+                <template #[`item.payment.amount`]="{ value }"><strong class="text-primary text-no-wrap">{{ money(value) }}</strong></template>
+                <template #item.issued_at="{ value }">{{ value ? new Date(value).toLocaleString('vi-VN') : '—' }}</template>
+                <template #item.status="{ item }"><v-chip :color="invoiceStatus(item)[1]" size="small" variant="tonal" class="font-weight-medium">{{ invoiceStatus(item)[0] }}</v-chip></template>
+                <template #item.actions="{ item }"><div class="d-flex justify-end ga-1"><v-btn v-if="canPublishInvoice(item)" :color="invoiceIsFailed(item) ? 'error' : 'primary'" variant="tonal" size="small" prepend-icon="mdi-send-outline" :loading="invoiceBusy" @click="publishInvoices([invoicePaymentId(item)])">{{ invoiceIsFailed(item) ? 'Phát hành lại' : 'Phát hành' }}</v-btn><v-btn v-if="invoiceIsPublished(item)" color="success" variant="tonal" size="small" prepend-icon="mdi-file-download-outline" @click="openPaymentPdf(invoicePaymentId(item), 'invoice')">Xem hóa đơn</v-btn></div></template>
+                <template #no-data><div class="empty-state"><v-icon icon="mdi-receipt-text-remove-outline" size="52" /><div class="mt-2">Không tìm thấy hóa đơn phù hợp</div></div></template>
+              </v-data-table>
+            </v-card>
+          </template>
+
+          <template v-else-if="page === '/debts'">
+            <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex align-center ga-3 mb-4"><v-avatar color="warning" variant="tonal" rounded="lg"><v-icon icon="mdi-filter-variant" /></v-avatar><div><div class="font-weight-bold">Bộ lọc công nợ</div><div class="text-caption text-medium-emphasis">Khoảng thời gian tính theo các tháng chưa thanh toán</div></div></div><v-row dense align="center"><v-col cols="12" sm="6" lg="3"><v-select v-model="debtFilters.collection_route_id" :items="debtData.options.routes" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" clearable hide-details /></v-col><v-col cols="12" sm="6" lg="3"><v-select v-model="debtFilters.collector_id" :items="debtData.options.collectors" item-title="name" item-value="id" label="Tất cả nhân viên" prepend-inner-icon="mdi-account-tie-outline" clearable hide-details /></v-col><v-col cols="12" sm="6" lg="2"><MonthPicker v-model="debtFilters.from_month" label="Từ tháng" /></v-col><v-col cols="12" sm="6" lg="2"><MonthPicker v-model="debtFilters.to_month" label="Đến tháng" :min="debtFilters.from_month" /></v-col><v-col cols="12" lg="2"><v-btn color="primary" size="large" block prepend-icon="mdi-magnify" :loading="busy" @click="load">Lọc dữ liệu</v-btn></v-col></v-row><div class="d-flex align-center flex-wrap ga-3 mt-4"><v-switch v-model="debtFilters.over_six_months" color="error" label="Chỉ hiện hộ nợ trên 6 tháng" hide-details inset @update:model-value="load" /><v-btn v-if="debtFilters.from_month" size="small" variant="text" prepend-icon="mdi-calendar-remove-outline" @click="debtFilters.from_month = ''; load()">Tính từ khi bắt đầu dịch vụ</v-btn></div></v-card>
+            <v-row class="mb-1"><v-col v-for="item in debtKpis" :key="item.label" cols="12" sm="6" lg="3"><v-card class="kpi-card pa-4 h-100" border rounded="xl"><div class="d-flex justify-space-between align-center ga-3"><div><div class="text-caption text-medium-emphasis mb-1">{{ item.label }}</div><div class="text-h6 font-weight-bold">{{ item.value }}</div></div><v-avatar :color="item.color" variant="tonal" rounded="lg"><v-icon :icon="item.icon" /></v-avatar></div></v-card></v-col></v-row>
+            <div class="d-flex justify-end mb-3"><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportDebts">Export danh sách chưa thu</v-btn></div>
+            <v-card border rounded="xl" overflow-x="auto"><div class="d-flex align-center justify-space-between pa-5"><div><div class="text-h6 font-weight-bold">Danh sách hộ còn công nợ</div><div class="text-caption text-medium-emphasis">Sắp xếp theo số tháng nợ và mức độ quá hạn</div></div><v-chip color="error" variant="tonal" prepend-icon="mdi-alert-outline">{{ debtData.summary.over_six_months || 0 }} hộ cảnh báo</v-chip></div><v-divider /><v-data-table :headers="[{title:'STT',key:'sequence_number'},{title:'Mã hộ',key:'code'},{title:'Hộ dân',key:'owner_name'},{title:'Tuyến thu',key:'route.name'},{title:'Nhân viên',key:'collectors'},{title:'Kỳ nợ',key:'debt_period'},{title:'Còn nợ',key:'debt_months',align:'center'},{title:'Quá hạn',key:'overdue_months',align:'center'},{title:'Tổng tiền nợ',key:'total_debt',align:'end'}]" :items="debtData.items" :loading="busy" :sort-by="[{key:'debt_months',order:'desc'}]" hover items-per-page="15"><template #item.collectors="{ item }">{{ debtCollectors(item) }}</template><template #item.debt_period="{ item }"><span class="text-no-wrap">{{ debtPeriod(item) }}</span></template><template #item.debt_months="{ value }"><v-chip :color="value > 6 ? 'error' : value >= 3 ? 'warning' : 'info'" size="small" variant="tonal" class="font-weight-bold">{{ value }} tháng</v-chip></template><template #item.overdue_months="{ value }"><span :class="value > 6 ? 'text-error font-weight-bold' : ''">{{ value }} tháng</span></template><template #item.total_debt="{ value }"><strong class="text-error text-no-wrap">{{ money(value) }}</strong></template><template #no-data><div class="empty-state"><v-icon icon="mdi-check-decagram-outline" color="success" size="52" /><div class="mt-2">Không có hộ dân còn nợ trong kỳ đã chọn</div></div></template></v-data-table></v-card>
           </template>
 
           <template v-else-if="page === '/payments'">
@@ -688,7 +889,7 @@ onMounted(async () => {
             </v-tabs>
             <v-checkbox v-if="routeManagementPages.includes(page) || page === '/households'" v-model="showDeleted" label="Hiển thị dữ liệu đã xóa" color="primary" hide-details class="mb-3" />
             <div v-if="page === '/routes'" class="d-flex ga-2 mb-4 flex-wrap"><input ref="importInput" type="file" accept=".xlsx,.xls" hidden @change="importRoutes" /><v-btn variant="outlined" prepend-icon="mdi-download" @click="downloadRouteTemplate">Tải file mẫu</v-btn><v-btn variant="outlined" prepend-icon="mdi-file-excel" @click="importInput?.click()">Import Excel</v-btn></div>
-            <v-card v-if="page === '/households'" class="pa-4 mb-5 household-tools" border rounded="lg"><div class="d-flex flex-column flex-md-row align-md-center justify-space-between ga-4"><div><div class="font-weight-bold">Nhập dữ liệu hộ dân</div><div class="text-caption text-medium-emphasis">Sử dụng file mẫu để bảo đảm đúng mã tuyến và mã dịch vụ</div></div><div class="d-flex ga-2 flex-wrap"><input ref="householdImportInput" type="file" accept=".xlsx,.xls" hidden @change="importHouseholds" /><v-btn variant="outlined" prepend-icon="mdi-file-download-outline" @click="downloadHouseholdTemplate">Tải file mẫu</v-btn><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" @click="householdImportInput?.click()">Upload Excel</v-btn></div></div></v-card>
+            <v-card v-if="page === '/households'" class="pa-4 mb-5 household-tools" border rounded="lg"><div class="d-flex flex-column flex-md-row align-md-center justify-space-between ga-4"><div><div class="font-weight-bold">Dữ liệu hộ dân</div><div class="text-caption text-medium-emphasis">Nhập dữ liệu theo file mẫu hoặc xuất danh sách đang lọc</div></div><div class="d-flex ga-2 flex-wrap"><input ref="householdImportInput" type="file" accept=".xlsx,.xls" hidden @change="importHouseholds" /><v-btn variant="outlined" prepend-icon="mdi-file-download-outline" @click="downloadHouseholdTemplate">Tải file mẫu</v-btn><v-btn color="success" variant="tonal" prepend-icon="mdi-file-upload-outline" @click="householdImportInput?.click()">Upload Excel</v-btn><v-btn color="success" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportHouseholds">Export Excel</v-btn></div></div></v-card>
             <v-card v-if="page === '/households'" class="pa-4 mb-5" border rounded="lg">
               <div class="text-subtitle-2 font-weight-bold mb-3"><v-icon icon="mdi-filter-variant" color="primary" class="mr-2" />Tìm kiếm và lọc hộ dân</div>
               <v-row dense align="center">
@@ -825,9 +1026,23 @@ onMounted(async () => {
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="resource-form" prepend-icon="mdi-content-save-outline">{{ editing.id ? 'Lưu thay đổi' : 'Thêm mới' }}</v-btn></v-card-actions>
         </v-card>
       </v-dialog>
+      <v-dialog v-model="auditModal" max-width="900" scrollable>
+        <v-card class="user-modal" rounded="xl"><div class="user-modal__header"><div class="d-flex align-center ga-4"><v-avatar color="white" size="50"><v-icon color="primary" icon="mdi-file-document-search-outline" size="28" /></v-avatar><div><div class="text-h6 font-weight-bold">Chi tiết nhật ký</div><div class="text-body-2 opacity-80">{{ auditDetail ? auditAction(auditDetail.action)[0] : '' }} · {{ auditDetail ? new Date(auditDetail.created_at).toLocaleString('vi-VN') : '' }}</div></div></div><v-btn icon="mdi-close" color="white" variant="text" @click="auditModal = false" /></div><v-card-text class="user-modal__body"><v-row><v-col cols="12" md="6"><v-card class="pa-4 h-100" border rounded="lg"><div class="text-caption text-medium-emphasis">Người thực hiện</div><div class="font-weight-bold mt-1">{{ auditDetail?.user?.name || 'Không xác định' }}</div><div class="text-caption">{{ auditDetail?.user?.username || '—' }}</div></v-card></v-col><v-col cols="12" md="6"><v-card class="pa-4 h-100" border rounded="lg"><div class="text-caption text-medium-emphasis">Đối tượng và IP</div><div class="font-weight-bold mt-1">{{ auditDetail ? auditEntityFor(auditDetail) : '—' }}</div><div class="text-caption">IP: {{ auditDetail?.ip_address || '—' }}</div></v-card></v-col><v-col cols="12" md="6"><div class="form-section mb-0 h-100"><div class="form-section__title"><v-icon icon="mdi-database-arrow-left-outline" />Dữ liệu trước thay đổi</div><pre class="audit-json">{{ prettyJson(auditDetail?.old_values) }}</pre></div></v-col><v-col cols="12" md="6"><div class="form-section mb-0 h-100"><div class="form-section__title"><v-icon icon="mdi-database-arrow-right-outline" />Dữ liệu sau thay đổi</div><pre class="audit-json">{{ prettyJson(auditDetail?.new_values) }}</pre></div></v-col></v-row></v-card-text><v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="auditModal = false">Đóng</v-btn></v-card-actions></v-card>
+      </v-dialog>
+      <v-dialog v-model="profileModal" max-width="760" scrollable>
+        <v-card class="user-modal" rounded="xl">
+          <div class="user-modal__header"><div class="d-flex align-center ga-4"><v-avatar color="white" size="50"><v-icon color="primary" icon="mdi-account-edit-outline" size="28" /></v-avatar><div><div class="text-h6 font-weight-bold">Thông tin cá nhân</div><div class="text-body-2 opacity-80">Cập nhật hồ sơ và bảo mật tài khoản</div></div></div><v-btn icon="mdi-close" variant="text" color="white" @click="profileModal = false" /></div>
+          <v-card-text class="user-modal__body"><v-form id="profile-form" @submit.prevent="saveProfile">
+            <div class="avatar-panel mb-6"><v-avatar size="88" color="primary" variant="tonal" :image="profileAvatarPreview || undefined"><span v-if="!profileAvatarPreview" class="text-h4 font-weight-bold">{{ profileForm.name?.[0]?.toUpperCase() || '?' }}</span></v-avatar><div class="flex-grow-1"><div class="text-subtitle-1 font-weight-bold mb-1">Ảnh đại diện</div><div class="text-caption text-medium-emphasis mb-3">JPG, PNG hoặc WebP · Tối đa 2 MB</div><div class="d-flex align-center ga-2 flex-wrap"><v-file-input v-model="profileAvatarFile" accept="image/png,image/jpeg,image/webp" label="Chọn ảnh" density="compact" variant="outlined" hide-details prepend-icon="" prepend-inner-icon="mdi-camera-outline" class="flex-grow-1" /><v-btn v-if="profileAvatarPreview" icon="mdi-delete-outline" color="error" variant="tonal" title="Xóa ảnh" @click="removeProfileAvatar" /></div></div></div>
+            <div class="form-section"><div class="form-section__title"><v-icon icon="mdi-card-account-details-outline" />Thông tin hồ sơ</div><v-row dense><v-col cols="12" md="6"><v-text-field v-model="profileForm.name" label="Họ và tên *" prepend-inner-icon="mdi-account-outline" required /></v-col><v-col cols="12" md="6"><v-text-field :model-value="auth.user?.username" label="Tên đăng nhập" prepend-inner-icon="mdi-account-key-outline" disabled /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.email" label="Email *" type="email" prepend-inner-icon="mdi-email-outline" required /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.phone" label="Số điện thoại" prepend-inner-icon="mdi-phone-outline" /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.identity_number" label="CCCD" prepend-inner-icon="mdi-card-account-details-outline" /></v-col><v-col cols="12" md="3"><v-text-field v-model="profileForm.date_of_birth" label="Ngày sinh" type="date" /></v-col><v-col cols="12" md="3"><v-select v-model="profileForm.gender" :items="[{title:'Nam',value:'NAM'},{title:'Nữ',value:'NU'},{title:'Khác',value:'KHAC'}]" label="Giới tính" clearable /></v-col><v-col cols="12"><v-text-field v-model="profileForm.address" label="Địa chỉ" prepend-inner-icon="mdi-map-marker-outline" /></v-col></v-row></div>
+            <div class="form-section mb-0"><div class="form-section__title"><v-icon icon="mdi-shield-key-outline" />Đổi mật khẩu</div><div class="text-caption text-medium-emphasis mb-4">Để trống nếu bạn không muốn thay đổi mật khẩu.</div><v-row dense><v-col cols="12"><v-text-field v-model="profileForm.current_password" label="Mật khẩu hiện tại" type="password" prepend-inner-icon="mdi-lock-outline" autocomplete="current-password" /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.password" label="Mật khẩu mới" type="password" prepend-inner-icon="mdi-lock-reset" hint="Tối thiểu 8 ký tự" persistent-hint autocomplete="new-password" /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.password_confirmation" label="Xác nhận mật khẩu mới" type="password" prepend-inner-icon="mdi-lock-check-outline" autocomplete="new-password" /></v-col></v-row></div>
+          </v-form></v-card-text>
+          <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="profileModal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="profile-form" prepend-icon="mdi-content-save-outline" :loading="profileSaving">Lưu thay đổi</v-btn></v-card-actions>
+        </v-card>
+      </v-dialog>
       <v-dialog v-model="historyModal" max-width="900" scrollable>
         <v-card class="user-modal" rounded="xl"><div class="user-modal__header"><div class="d-flex align-center ga-4"><v-avatar color="white" size="50"><v-icon color="primary" icon="mdi-history" size="28" /></v-avatar><div><div class="text-h6 font-weight-bold">Lịch sử thanh toán</div><div class="text-body-2 opacity-80">{{ historyHousehold?.code }} · {{ historyHousehold?.owner_name }}</div></div></div><v-btn icon="mdi-close" variant="text" color="white" @click="historyModal = false" /></div>
-          <v-card-text class="user-modal__body"><v-data-table :headers="[{title:'Mã phiếu',key:'code'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'amount'},{title:'Ngày thu',key:'paid_at'},{title:'Người thu',key:'collector.name'},{title:'Hóa đơn',key:'invoice.status'}]" :items="paymentHistory" :loading="historyLoading" hover><template #item.period="{ item }">{{ new Date(item.from_month).toLocaleDateString('vi-VN',{month:'2-digit',year:'numeric'}) }} – {{ new Date(item.to_month).toLocaleDateString('vi-VN',{month:'2-digit',year:'numeric'}) }}</template><template #item.amount="{ value }"><span class="font-weight-bold text-primary">{{ money(value) }}</span></template><template #item.paid_at="{ value }">{{ value ? new Date(value).toLocaleString('vi-VN') : '—' }}</template><template #[`item.invoice.status`]="{ item }"><v-chip size="small" variant="tonal" color="info">{{ item.invoice?.status || 'Chưa có' }}</v-chip></template><template #no-data><div class="empty-state"><v-icon icon="mdi-receipt-text-outline" size="48" /><div class="mt-2">Hộ dân chưa có lịch sử thanh toán</div></div></template></v-data-table></v-card-text>
+          <v-card-text class="user-modal__body"><v-data-table :headers="[{title:'Mã phiếu',key:'code'},{title:'Số hóa đơn',key:'invoice.invoice_no'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'amount'},{title:'Ngày thu',key:'paid_at'},{title:'Người thu',key:'collector.name'},{title:'Hóa đơn',key:'invoice.status'}]" :items="paymentHistory" :loading="historyLoading" hover><template #[`item.invoice.invoice_no`]="{ item }"><span v-if="item.invoice?.invoice_no" class="font-weight-medium text-primary">{{ item.invoice.invoice_no }}</span><span v-else class="text-medium-emphasis">—</span></template><template #item.period="{ item }">{{ new Date(item.from_month).toLocaleDateString('vi-VN',{month:'2-digit',year:'numeric'}) }} – {{ new Date(item.to_month).toLocaleDateString('vi-VN',{month:'2-digit',year:'numeric'}) }}</template><template #item.amount="{ value }"><span class="font-weight-bold text-primary">{{ money(value) }}</span></template><template #item.paid_at="{ value }">{{ value ? new Date(value).toLocaleString('vi-VN') : '—' }}</template><template #[`item.invoice.status`]="{ item }"><v-chip size="small" variant="tonal" color="info">{{ item.invoice?.status || 'Chưa có' }}</v-chip></template><template #no-data><div class="empty-state"><v-icon icon="mdi-receipt-text-outline" size="48" /><div class="mt-2">Hộ dân chưa có lịch sử thanh toán</div></div></template></v-data-table></v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="historyModal = false">Đóng</v-btn></v-card-actions></v-card>
       </v-dialog>
       <v-snackbar v-model="snackbar" color="success" location="bottom end"

@@ -49,6 +49,9 @@ class HouseholdManagementTest extends TestCase
         $this->withToken($token)->putJson('/api/v1/households/'.$created['id'], [...$payload, 'owner_name' => 'Nguyễn Văn B'])
             ->assertOk()->assertJsonPath('data.owner_name', 'Nguyễn Văn B');
 
+        $this->withToken($token)->get('/api/v1/households-export?search=Nguyễn')
+            ->assertOk()->assertDownload();
+
         $this->withToken($token)->deleteJson('/api/v1/households/'.$created['id'])->assertOk();
         $this->assertSoftDeleted('households', ['id' => $created['id']]);
         $this->withToken($token)->postJson('/api/v1/households/'.$created['id'].'/restore')->assertOk();

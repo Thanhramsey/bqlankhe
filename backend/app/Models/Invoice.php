@@ -15,4 +15,9 @@ class Invoice extends Model
     {
         return ['provider_response' => 'array', 'issued_at' => 'datetime'];
     }
+
+    public function payment()
+    {
+        return $this->belongsTo(Payment::class);
+    }
 }

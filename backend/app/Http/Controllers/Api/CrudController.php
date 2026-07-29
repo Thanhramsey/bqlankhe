@@ -87,7 +87,11 @@ class CrudController extends Controller
         $item->update($data);
         if ($resource === 'routes' && $userIds !== null) $item->users()->sync($userIds);
         if ($resource === 'employees' && $routeIds !== null) $item->routes()->sync($routeIds);
-        $this->log($request, 'UPDATE', $item, $old);
+        $action = $resource === 'services' && (
+            (string) ($old['monthly_price'] ?? '') !== (string) $item->monthly_price ||
+            (string) ($old['tax_fee'] ?? '') !== (string) $item->tax_fee
+        ) ? 'CHANGE_PRICE' : 'UPDATE';
+        $this->log($request, $action, $item, $old);
 
         return response()->json(['success' => true, 'message' => 'Đã cập nhật dữ liệu.', 'data' => $item]);
     }

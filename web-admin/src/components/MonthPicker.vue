@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-const props = defineProps<{ modelValue: string; label: string; min?: string }>()
+const props = withDefaults(defineProps<{ modelValue: string; label: string; min?: string; hideDetails?: boolean }>(), {
+  hideDetails: true,
+})
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const menu = ref(false)
 const year = ref(Number(props.modelValue?.slice(0, 4)) || new Date().getFullYear())
@@ -23,7 +25,7 @@ function selectMonth(month: number) {
 <template>
   <v-menu v-model="menu" :close-on-content-click="false" location="bottom" max-width="360">
     <template #activator="{ props: activatorProps }">
-      <v-text-field v-bind="activatorProps" :model-value="displayValue" :label="label" prepend-inner-icon="mdi-calendar-month-outline" append-inner-icon="mdi-chevron-down" readonly required />
+      <v-text-field v-bind="activatorProps" :model-value="displayValue" :label="label" prepend-inner-icon="mdi-calendar-month-outline" append-inner-icon="mdi-chevron-down" :hide-details="hideDetails" readonly required />
     </template>
     <v-card class="month-picker pa-3" rounded="xl" elevation="12">
       <div class="d-flex align-center justify-space-between mb-3"><v-btn icon="mdi-chevron-left" variant="text" @click="year--" /><div class="text-h6 font-weight-bold">{{ year }}</div><v-btn icon="mdi-chevron-right" variant="text" @click="year++" /></div>

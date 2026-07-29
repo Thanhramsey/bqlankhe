@@ -51,6 +51,14 @@ class PaymentFlowTest extends TestCase
         $this->withToken($token)->postJson('/api/v1/invoices/publish', ['payment_ids' => $paymentIds])
             ->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('data.0.fkey', $paymentCodes[0]);
         $this->assertDatabaseHas('invoices', ['payment_id' => $paymentIds[0], 'status' => 'DA_PHAT_HANH', 'invoice_no' => '0000001']);
+        $this->withToken($token)->getJson('/api/v1/invoices?search=0000001')
+            ->assertOk()
+            ->assertJsonPath('data.items.data.0.invoice_no', '0000001')
+            ->assertJsonPath('data.items.data.0.status', 'DA_PHAT_HANH');
+        $this->withToken($token)->get('/api/v1/invoices-export?status=DA_PHAT_HANH')
+            ->assertOk()->assertDownload();
+        $this->withToken($token)->get('/api/v1/debts-export?to_month=2026-07')
+            ->assertOk()->assertDownload();
         $this->withToken($token)->get('/api/v1/payments/'.$paymentIds[0].'/receipt')->assertOk()->assertHeader('content-type', 'application/pdf');
         $this->withToken($token)->get('/api/v1/payments/'.$paymentIds[0].'/invoice')->assertOk()->assertHeader('content-type', 'application/pdf');
         $this->withToken($token)->postJson('/api/v1/payments', $payload)->assertUnprocessable()->assertJsonPath('success', false);

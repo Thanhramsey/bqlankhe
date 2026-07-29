@@ -42,6 +42,11 @@ class User extends Authenticatable
         return $this->roles()->with('permissions')->get()->flatMap->permissions->pluck('code')->unique()->values()->all();
     }
 
+    public function auditLogs()
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
     public function hasPermission(string $permission): bool
     {
         return in_array($permission, $this->permissions(), true);
