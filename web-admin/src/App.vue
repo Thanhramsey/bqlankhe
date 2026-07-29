@@ -6,6 +6,7 @@ import { api } from './api'
 import { useAuthStore } from './stores/auth'
 import MonthPicker from './components/MonthPicker.vue'
 import DashboardView from './views/dashboard/DashboardView.vue'
+import InventoryView from './views/inventory/InventoryView.vue'
 
 type ResourceConfig = {
   endpoint: string
@@ -196,7 +197,9 @@ const page = computed(() => route.path)
 const routeManagementPages = ['/provinces', '/wards', '/neighborhoods', '/routes']
 const config = computed(() => resources[page.value])
 const pageTitle = computed(() =>
-  page.value === '/'
+  page.value === '/inventory'
+    ? 'Quản lý vật tư'
+  : page.value === '/'
     ? 'Tổng quan'
     : page.value === '/payments'
       ? 'Thu phí'
@@ -214,6 +217,7 @@ const menuIcons: Record<string, string> = {
   '/': 'mdi-view-dashboard-outline',
   '/households': 'mdi-home-city-outline',
   '/services': 'mdi-recycle-variant',
+  '/inventory': 'mdi-package-variant-closed',
   '/routes': 'mdi-map-marker-path',
   '/payments': 'mdi-wallet-outline',
   '/invoices': 'mdi-receipt-text-check-outline',
@@ -781,6 +785,8 @@ onMounted(async () => {
           >
 
           <template v-if="page === '/'"><DashboardView /></template>
+
+          <template v-else-if="page === '/inventory'"><InventoryView /></template>
 
           <template v-else-if="page === '/reports'">
             <v-card class="payment-filter pa-4 pa-md-5 mb-5" border rounded="xl"><div class="d-flex flex-column flex-lg-row justify-space-between ga-4 mb-5"><div class="d-flex align-center ga-3"><v-avatar color="primary" variant="tonal" rounded="lg"><v-icon icon="mdi-chart-box-outline" /></v-avatar><div><div class="font-weight-bold">Thiết lập báo cáo</div><div class="text-caption text-medium-emphasis">Doanh thu được tính theo căn cứ thời gian đã chọn</div></div></div><div class="d-flex flex-wrap ga-2"><v-btn-toggle v-model="reportFilters.report_type" color="primary" mandatory divided><v-btn value="summary" prepend-icon="mdi-chart-pie">Tổng hợp</v-btn><v-btn value="detail" prepend-icon="mdi-format-list-bulleted">Chi tiết</v-btn></v-btn-toggle><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportReport('excel')">Excel</v-btn><v-btn color="error" variant="tonal" prepend-icon="mdi-file-pdf-box" :loading="exportBusy" @click="exportReport('pdf')">PDF</v-btn></div></div><v-row dense><v-col cols="12" md="4"><v-select v-model="reportFilters.basis" :items="[{title:'Theo ngày thu tiền',value:'paid_at'},{title:'Theo ngày xuất hóa đơn',value:'issued_at'}]" label="Căn cứ ghi nhận doanh thu" prepend-inner-icon="mdi-calendar-check-outline" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.from_date" type="date" label="Từ ngày" hide-details /></v-col><v-col cols="12" sm="6" md="2"><v-text-field v-model="reportFilters.to_date" type="date" label="Đến ngày" hide-details /></v-col><v-col cols="12" md="4"><v-select v-model="reportFilters.dimension" :items="[{title:'Theo thời gian',value:'period'},{title:'Theo nhân viên thu',value:'collector'},{title:'Theo tuyến thu',value:'route'}]" label="Nhóm báo cáo" prepend-inner-icon="mdi-group" hide-details /></v-col><v-col v-if="reportFilters.dimension === 'period'" cols="12" md="4"><v-select v-model="reportFilters.period_unit" :items="[{title:'Theo tháng',value:'month'},{title:'Theo quý',value:'quarter'},{title:'Theo năm',value:'year'}]" label="Chu kỳ tổng hợp" prepend-inner-icon="mdi-calendar-range" hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collector_id" :items="reportData.options.collectors" item-title="name" item-value="id" label="Tất cả nhân viên" prepend-inner-icon="mdi-account-tie-outline" clearable hide-details /></v-col><v-col cols="12" sm="6" md="3"><v-select v-model="reportFilters.collection_route_id" :items="reportData.options.routes" item-title="name" item-value="id" label="Tất cả tuyến thu" prepend-inner-icon="mdi-map-marker-path" clearable hide-details /></v-col><v-col cols="12" :md="reportFilters.dimension === 'period' ? 2 : 6"><v-btn color="primary" size="large" block prepend-icon="mdi-chart-bar" :loading="busy" @click="load">Xem báo cáo</v-btn></v-col></v-row><v-alert v-if="reportFilters.basis === 'issued_at'" class="mt-4" type="info" variant="tonal" density="compact">Chỉ tính các hóa đơn đã phát hành thành công, dựa trên ngày phát hành hóa đơn.</v-alert></v-card>

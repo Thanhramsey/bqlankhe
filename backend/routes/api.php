@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RouteExcelController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\InventoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -22,6 +23,26 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/profile', [AuthController::class, 'updateProfile']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('dashboard', DashboardController::class)->middleware('permission:dashboard.view');
+        Route::prefix('inventory')->middleware('permission:inventory.manage')->group(function () {
+            Route::get('options', [InventoryController::class, 'options']);
+            Route::get('categories', [InventoryController::class, 'categories']);
+            Route::post('categories', [InventoryController::class, 'storeCategory']);
+            Route::put('categories/{category}', [InventoryController::class, 'updateCategory']);
+            Route::delete('categories/{category}', [InventoryController::class, 'destroyCategory']);
+            Route::get('warehouses', [InventoryController::class, 'warehouses']);
+            Route::post('warehouses', [InventoryController::class, 'storeWarehouse']);
+            Route::put('warehouses/{warehouse}', [InventoryController::class, 'updateWarehouse']);
+            Route::delete('warehouses/{warehouse}', [InventoryController::class, 'destroyWarehouse']);
+            Route::get('materials', [InventoryController::class, 'materials']);
+            Route::post('materials', [InventoryController::class, 'storeMaterial']);
+            Route::post('materials/{material}', [InventoryController::class, 'updateMaterial']);
+            Route::delete('materials/{material}', [InventoryController::class, 'destroyMaterial']);
+            Route::get('transactions', [InventoryController::class, 'transactions']);
+            Route::post('transactions', [InventoryController::class, 'storeTransaction']);
+            Route::get('stocks', [InventoryController::class, 'stocks']);
+            Route::get('report', [InventoryController::class, 'report']);
+            Route::get('report/export', [InventoryController::class, 'export']);
+        });
         Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:settings.manage');
         Route::get('reports/revenue', [ReportController::class, 'revenue'])->middleware('permission:reports.view');
         Route::get('reports/revenue/excel', [ReportController::class, 'excel'])->middleware('permission:reports.view');
