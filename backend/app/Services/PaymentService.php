@@ -30,7 +30,8 @@ class PaymentService
                 if ($subscription->started_at->startOfMonth()->gt($month) || ($subscription->ended_at && $subscription->ended_at->startOfMonth()->lt($month))) {
                     continue;
                 }
-                if (PaymentMonth::where('household_service_id', $subscription->id)->whereDate('month', $month)->exists()) {
+                if (PaymentMonth::where('household_service_id', $subscription->id)->whereDate('month', $month)
+                    ->when($data['exclude_payment_id'] ?? null, fn ($query, $id) => $query->where('payment_id', '!=', $id))->exists()) {
                     throw ValidationException::withMessages(['from_month' => 'Tháng '.$month->format('m/Y').' đã được thu.']);
                 }
                 $values = $this->pricing->values($subscription->service, $month);
@@ -119,6 +120,25 @@ class PaymentService
         $latest = PaymentMonth::whereHas('payment', fn ($q) => $q->where('household_id', $household->id))->max('month');
 
         return $latest ? CarbonImmutable::parse($latest)->addMonth()->format('Y-m') : now()->format('Y-m');
+    }
+
+    public function replacePending(Payment $payment, array $data, int $userId, ?string $ip = null): Payment
+    {
+        return DB::transaction(function () use ($payment, $data, $userId, $ip) {
+            $oldId = $payment->id;
+            $oldCode = $payment->code;
+            $householdId = $payment->household_id;
+            $collectorId = $payment->collector_id;
+            $this->deletePending($payment, $userId, $ip);
+            $replacement = $this->collect([...$data, 'household_id' => $householdId], $collectorId, $ip);
+            Payment::withTrashed()->whereKey($oldId)->update(['code' => $oldCode.'-EDIT-'.$oldId]);
+            $replacement->update(['code' => $oldCode]);
+            AuditLog::create(['user_id' => $userId, 'action' => 'UPDATE_PAYMENT', 'entity_type' => Payment::class,
+                'entity_id' => $replacement->id, 'old_values' => ['payment_id' => $oldId, 'code' => $oldCode],
+                'new_values' => $replacement->fresh()->toArray(), 'ip_address' => $ip]);
+
+            return $replacement->fresh()->load(['household.route', 'invoice', 'months.pricePeriod']);
+        });
     }
 
     public function deletePending(Payment $payment, int $userId, ?string $ip = null): void

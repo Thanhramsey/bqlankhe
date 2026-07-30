@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Household;
 use App\Models\HouseholdService;
+use App\Models\CollectionRoute;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Service;
@@ -26,6 +27,8 @@ class ServicePricePeriodTest extends TestCase
         $role->permissions()->attach($permissions->pluck('id'));
         $user = User::factory()->create(['is_active' => true]);
         $user->roles()->attach($role);
+        $route = CollectionRoute::create(['code' => 'PRICE-R', 'name' => 'Tuyến kiểm tra giá', 'is_active' => true]);
+        $user->collectionRoutes()->attach($route);
         $token = $user->createToken('test')->plainTextToken;
 
         $service = Service::create(['code' => 'RAC-SH', 'name' => 'Rác sinh hoạt', 'monthly_price' => 8000, 'tax_fee' => 0, 'is_active' => true]);
@@ -41,6 +44,7 @@ class ServicePricePeriodTest extends TestCase
 
         $household = Household::create(['code' => 'H-GIA', 'owner_name' => 'Hộ kiểm tra giá', 'address' => 'An Khê', 'ward' => 'An Khê', 'is_active' => true]);
         HouseholdService::create(['household_id' => $household->id, 'service_id' => $service->id, 'monthly_price' => 8000, 'started_at' => '2026-01-01', 'is_active' => true]);
+        $household->update(['collection_route_id' => $route->id]);
         $payload = ['household_id' => $household->id, 'from_month' => '2026-05', 'to_month' => '2026-07'];
 
         $this->withToken($token)->postJson('/api/v1/mobile/payments/preview', $payload)

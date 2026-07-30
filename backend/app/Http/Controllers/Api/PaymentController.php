@@ -33,6 +33,21 @@ class PaymentController extends Controller
         return response()->json(['success' => true, 'message' => 'Đã thu phí cho '.$data->count().' hộ dân.', 'data' => $data], 201);
     }
 
+    public function update(Request $request, Payment $payment): JsonResponse
+    {
+        $data = $request->validate([
+            'household_id' => 'required|integer|exists:households,id',
+            'from_month' => 'required|date_format:Y-m',
+            'to_month' => 'required|date_format:Y-m|after_or_equal:from_month',
+            'payment_method' => 'required|in:TIEN_MAT,CHUYEN_KHOAN,KHAC',
+            'note' => 'nullable|string|max:1000',
+        ]);
+        abort_unless((int) $data['household_id'] === $payment->household_id, 422, 'Không được thay đổi hộ dân của phiếu thu.');
+        $updated = $this->service->replacePending($payment, $data, $request->user()->id, $request->ip());
+
+        return response()->json(['success' => true, 'message' => 'Đã cập nhật phiếu thu.', 'data' => $updated]);
+    }
+
     public function options(Request $request): JsonResponse
     {
         $households = Household::query()->where('is_active', true)

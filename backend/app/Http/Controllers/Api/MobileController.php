@@ -26,9 +26,7 @@ class MobileController extends Controller
     {
         $ids = $this->routeIds($request);
         $query = CollectionRoute::where('is_active', true)->withCount(['households as household_count' => fn ($q) => $q->where('is_active', true)]);
-        if ($ids->isNotEmpty()) {
-            $query->whereIn('id', $ids);
-        }
+        $ids->isNotEmpty() ? $query->whereIn('id', $ids) : $query->whereRaw('1 = 0');
 
         return $this->ok($query->orderBy('name')->get(['id', 'code', 'name']));
     }
@@ -139,6 +137,23 @@ class MobileController extends Controller
         return $this->ok($payment->load(['household.route', 'household.services.service', 'collector:id,name', 'months.pricePeriod', 'invoice']));
     }
 
+    public function updatePayment(Request $request, Payment $payment): JsonResponse
+    {
+        $this->authorizeOwnPayment($request, $payment);
+        $data = $this->paymentData($request, true);
+        $updated = $this->payments->replacePending($payment, $data, $request->user()->id, $request->ip());
+
+        return $this->ok($updated);
+    }
+
+    public function deletePayment(Request $request, Payment $payment): JsonResponse
+    {
+        $this->authorizeOwnPayment($request, $payment);
+        $this->payments->deletePending($payment, $request->user()->id, $request->ip());
+
+        return $this->ok(null);
+    }
+
     public function issueInvoice(Request $request, Payment $payment, VnptInvoiceService $service): JsonResponse
     {
         $this->authorizePayment($request, $payment);
@@ -210,7 +225,7 @@ class MobileController extends Controller
 
     private function paymentData(Request $request, bool $withPayment = false): array
     {
-        return $request->validate(['household_id' => 'required|integer|exists:households,id', 'from_month' => 'required|date_format:Y-m', 'to_month' => 'required|date_format:Y-m|after_or_equal:from_month', 'payment_method' => [$withPayment ? 'required' : 'nullable', 'in:TIEN_MAT,CHUYEN_KHOAN,KHAC'], 'note' => 'nullable|string|max:1000']);
+        return $request->validate(['household_id' => 'required|integer|exists:households,id', 'from_month' => 'required|date_format:Y-m', 'to_month' => 'required|date_format:Y-m|after_or_equal:from_month', 'payment_method' => [$withPayment ? 'required' : 'nullable', 'in:TIEN_MAT,CHUYEN_KHOAN,KHAC'], 'note' => 'nullable|string|max:1000', 'exclude_payment_id' => 'nullable|integer|exists:payments,id']);
     }
 
     private function routeIds(Request $request)
@@ -223,14 +238,13 @@ class MobileController extends Controller
     private function scopeRoutes(Builder $query, Request $request): void
     {
         $ids = $this->routeIds($request);
-        if ($ids->isNotEmpty()) {
-            $query->whereIn('collection_route_id', $ids);
-        }
+        $ids->isNotEmpty() ? $query->whereIn('collection_route_id', $ids) : $query->whereRaw('1 = 0');
     }
 
     private function authorizeHousehold(Request $request, Household $household): void
     {
         $ids = $this->routeIds($request);
+        abort_if($ids->isEmpty(), 403, 'Tài khoản chưa được phân công tuyến thu.');
         if ($ids->isNotEmpty()) {
             abort_unless($ids->contains($household->collection_route_id), 403, 'Hộ dân không thuộc tuyến được phân công.');
         }
@@ -243,6 +257,12 @@ class MobileController extends Controller
             return;
         }
         $this->authorizeHousehold($request, $payment->household);
+    }
+
+    private function authorizeOwnPayment(Request $request, Payment $payment): void
+    {
+        abort_unless($payment->collector_id === $request->user()->id, 403, 'Bạn chỉ được sửa hoặc xóa phiếu do mình thu.');
+        $this->authorizePayment($request, $payment);
     }
 
     private function ok(mixed $data): JsonResponse

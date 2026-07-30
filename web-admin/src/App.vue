@@ -33,6 +33,9 @@ const search = ref('')
 const householdRouteFilter = ref<number | null>(null)
 const householdServiceFilter = ref<number | null>(null)
 const paymentRouteFilter = ref<number | null>(null)
+const paymentPage = ref(1)
+const paymentPerPage = ref(25)
+const paymentPagination = ref({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 })
 const modal = ref(false)
 const birthDateMenu = ref(false)
 const priceFromDateMenu = ref(false)
@@ -59,6 +62,9 @@ const priceEditing = ref<any>(null)
 const paymentPriceModal = ref(false)
 const paymentPriceDetail = ref<any>(null)
 const paymentSubmitting = ref(false)
+const recentPaymentEditModal = ref(false)
+const recentPaymentEditSaving = ref(false)
+const recentPaymentEdit = ref<any>({})
 const invoiceBusy = ref(false)
 const invoiceSettings = ref<any[]>([])
 const invoiceData = ref<any>({ items: { data: [] }, summary: {}, routes: [] })
@@ -408,11 +414,18 @@ async function load() {
       const loadSequence = ++paymentLoadSequence
       const routeQuery = paymentRouteFilter.value ? `&collection_route_id=${paymentRouteFilter.value}` : ''
       const [paymentsResponse, optionsResponse] = await Promise.all([
-        api<any>(`/payments?per_page=50${routeQuery}`),
+        api<any>(`/payments?page=${paymentPage.value}&per_page=${paymentPerPage.value}${routeQuery}`),
         api<any>(`/payments/options?${routeQuery.slice(1)}`),
       ])
       if (loadSequence !== paymentLoadSequence) return
       rows.value = paymentsResponse.data.data
+      paymentPagination.value = {
+        current_page: paymentsResponse.data.current_page || 1,
+        last_page: paymentsResponse.data.last_page || 1,
+        total: paymentsResponse.data.total || 0,
+        from: paymentsResponse.data.from || 0,
+        to: paymentsResponse.data.to || 0,
+      }
       households.value = optionsResponse.data.households
       routeOptions.value.routes = optionsResponse.data.routes || []
     } else if (page.value === '/invoices') {
@@ -640,6 +653,22 @@ function invoicePaymentId(invoice: any) { return Number(invoice?.payment_id) }
 function invoiceIsFailed(invoice: any) { return invoice?.status === 'PHAT_HANH_LOI' }
 function invoiceIsPublished(invoice: any) { return invoice?.status === 'DA_PHAT_HANH' }
 function canDeletePendingPayment(row: any) { return row?.invoice?.status === 'CHO_PHAT_HANH' && !row?.invoice?.invoice_no }
+function openRecentPaymentEdit(row: any) {
+  recentPaymentEdit.value = { id: row.id, code: row.code, household_id: row.household_id,
+    household_name: row.household?.owner_name, from_month: row.from_month?.slice(0, 7),
+    to_month: row.to_month?.slice(0, 7), payment_method: row.payment_method, note: row.note || '' }
+  recentPaymentEditModal.value = true
+}
+async function saveRecentPaymentEdit() {
+  recentPaymentEditSaving.value = true
+  try {
+    const result = await api<any>(`/payments/${recentPaymentEdit.value.id}`, { method: 'PUT', body: JSON.stringify(recentPaymentEdit.value) })
+    recentPaymentEditModal.value = false
+    notify(result.message || 'Đã cập nhật phiếu thu')
+    await load()
+  } catch (e:any) { error.value = e.message }
+  finally { recentPaymentEditSaving.value = false }
+}
 async function deletePendingPayment(row: any) {
   if (!confirm(`Xóa phiếu thu ${row.code}? Các tháng của phiếu sẽ được chuyển lại thành chưa thu.`)) return
   try {
@@ -790,8 +819,11 @@ watch(showDeleted, load)
 watch([householdRouteFilter, householdServiceFilter], load)
 watch(paymentRouteFilter, () => {
   payment.household_ids = []
+  paymentPage.value = 1
   load()
 })
+watch(paymentPerPage, () => { paymentPage.value = 1; if (page.value === '/payments') load() })
+function changePaymentPage(value: number) { paymentPage.value = value; load() }
 watch(() => payment.from_month, (value) => {
   payment.to_month = addMonthsToPeriod(value, payment.month_count)
 })
@@ -982,7 +1014,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
             <v-card border rounded="xl">
               <div class="d-flex align-center justify-space-between pa-5 ga-3"><div><div class="text-h6 font-weight-bold">Danh sách hóa đơn</div><div class="text-caption text-medium-emphasis">Hóa đơn được tạo tự động sau khi lập phiếu thu</div></div><div class="d-flex ga-2"><v-btn color="success" variant="tonal" prepend-icon="mdi-microsoft-excel" :loading="exportBusy" @click="exportInvoices">Export Excel</v-btn><v-btn icon="mdi-refresh" variant="tonal" color="primary" title="Tải lại" :loading="busy" @click="load" /></div></div>
               <v-divider />
-              <v-data-table :headers="[{title:'Mã phiếu',key:'payment.code'},{title:'Số hóa đơn',key:'invoice_no'},{title:'Hộ dân',key:'household'},{title:'Tuyến thu',key:'payment.household.route.name'},{title:'Người thu',key:'payment.collector.name'},{title:'Người phát hành',key:'issuer.name'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'payment.amount',align:'end'},{title:'Ngày phát hành',key:'issued_at'},{title:'Trạng thái',key:'status'},{title:'Thao tác',key:'actions',align:'end',sortable:false}]" :items="invoiceData.items.data || []" :loading="busy" hover items-per-page="15">
+              <v-data-table :headers="[{title:'Mã phiếu',key:'payment.code'},{title:'Số hóa đơn',key:'invoice_no'},{title:'Hộ dân',key:'household'},{title:'Tuyến thu',key:'payment.household.route.name'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'payment.amount',align:'end'},{title:'Trạng thái',key:'status'},{title:'Ngày phát hành',key:'issued_at'},{title:'Người thu',key:'payment.collector.name'},{title:'Người phát hành',key:'issuer.name'},{title:'Thao tác',key:'actions',align:'end',sortable:false}]" :items="invoiceData.items.data || []" :loading="busy" hover items-per-page="15">
                 <template #[`item.payment.collector.name`]="{ item }">{{ (item as any).payment?.collector?.name || '—' }}</template>
                 <template #[`item.issuer.name`]="{ item }">{{ (item as any).issuer?.name || '—' }}</template>
                 <template #item.invoice_no="{ value }"><span v-if="value" class="font-weight-bold text-primary">{{ value }}</span><span v-else class="text-medium-emphasis">—</span></template>
@@ -1018,12 +1050,12 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <th>Mã phiếu</th>
                         <th>Số hóa đơn</th>
                         <th>Hộ dân</th>
-                        <th>Người thu</th>
-                        <th>Người phát hành</th>
                         <th>Khoảng thu</th>
                         <th>Số tiền</th>
                         <th>Trạng thái</th>
-                        <th class="text-right">Thao tác</th>
+                        <th>Người thu</th>
+                        <th>Người phát hành</th>
+                        <th class="text-right payment-action-sticky">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1031,16 +1063,20 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <td class="font-weight-medium">{{ row.code }}</td>
                         <td><span v-if="row.invoice?.invoice_no" class="font-weight-medium text-primary">{{ row.invoice.invoice_no }}</span><span v-else class="text-medium-emphasis">—</span></td>
                         <td>{{ row.household?.owner_name }}</td>
-                        <td>{{ row.collector?.name || '—' }}</td>
-                        <td>{{ row.invoice?.issuer?.name || '—' }}</td>
                         <td>{{ monthLabel(row.from_month?.slice(0, 7)) }} → {{ monthLabel(row.to_month?.slice(0, 7)) }}</td>
                         <td class="font-weight-bold">{{ money(row.amount) }}</td>
                         <td>
                           <v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip>
                         </td>
-                        <td class="text-right"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item prepend-icon="mdi-calculator-variant-outline" title="Chi tiết áp giá" @click="showPaymentPriceDetail(row)" /><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></td>
+                        <td>{{ row.collector?.name || '—' }}</td>
+                        <td>{{ row.invoice?.issuer?.name || '—' }}</td>
+                        <td class="text-right payment-action-sticky"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item prepend-icon="mdi-calculator-variant-outline" title="Chi tiết áp giá" @click="showPaymentPriceDetail(row)" /><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-pencil-outline" title="Sửa phiếu thu" @click="openRecentPaymentEdit(row)" /><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></td>
                       </tr>
                     </tbody></v-table></div>
+                  <div class="payment-pagination d-flex flex-column flex-md-row align-md-center justify-space-between ga-3 pa-3 pa-md-4 border-t">
+                    <div class="d-flex align-center ga-3 flex-wrap"><span class="text-body-2 text-medium-emphasis">Hiển thị <strong>{{ paymentPagination.from || 0 }}–{{ paymentPagination.to || 0 }}</strong> / <strong>{{ paymentPagination.total.toLocaleString('vi-VN') }}</strong> giao dịch</span><v-select v-model="paymentPerPage" :items="[{title:'25 dòng',value:25},{title:'50 dòng',value:50},{title:'100 dòng',value:100}]" density="compact" hide-details width="112" /></div>
+                    <v-pagination :model-value="paymentPagination.current_page" :length="paymentPagination.last_page" :total-visible="6" density="comfortable" rounded="circle" @update:model-value="changePaymentPage" />
+                  </div>
                   <div class="payment-cards pa-3"><v-card v-for="row in rows" :key="row.id" class="pa-4 mb-3" variant="tonal" rounded="lg"><div class="d-flex justify-space-between ga-3"><div><div class="font-weight-bold">{{ row.household?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ row.code }} · {{ row.household?.route?.name || 'Chưa có tuyến' }}</div><div v-if="row.invoice?.invoice_no" class="text-caption text-primary font-weight-medium mt-1">HĐ số: {{ row.invoice.invoice_no }}</div></div><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></div><v-divider class="my-3" /><div class="d-flex justify-space-between text-body-2 mb-3"><span>{{ monthLabel(row.from_month?.slice(0, 7)) }} – {{ monthLabel(row.to_month?.slice(0, 7)) }}</span><strong class="text-primary">{{ money(row.amount) }}</strong></div><v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip></v-card><div v-if="!rows.length" class="empty-state">Chưa có giao dịch</div></div>
                 </v-card></v-col></v-row>
           </template>
@@ -1218,6 +1254,11 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
             <div class="form-section mb-0"><div class="form-section__title"><v-icon icon="mdi-shield-key-outline" />Đổi mật khẩu</div><div class="text-caption text-medium-emphasis mb-4">Để trống nếu bạn không muốn thay đổi mật khẩu.</div><v-row dense><v-col cols="12"><v-text-field v-model="profileForm.current_password" label="Mật khẩu hiện tại" type="password" prepend-inner-icon="mdi-lock-outline" autocomplete="current-password" /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.password" label="Mật khẩu mới" type="password" prepend-inner-icon="mdi-lock-reset" hint="Tối thiểu 8 ký tự" persistent-hint autocomplete="new-password" /></v-col><v-col cols="12" md="6"><v-text-field v-model="profileForm.password_confirmation" label="Xác nhận mật khẩu mới" type="password" prepend-inner-icon="mdi-lock-check-outline" autocomplete="new-password" /></v-col></v-row></div>
           </v-form></v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="profileModal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="profile-form" prepend-icon="mdi-content-save-outline" :loading="profileSaving">Lưu thay đổi</v-btn></v-card-actions>
+        </v-card>
+      </v-dialog>
+      <v-dialog v-model="recentPaymentEditModal" max-width="720" scrollable>
+        <v-card class="user-modal" rounded="xl"><div class="user-modal__header"><div class="d-flex align-center ga-3"><v-avatar color="white"><v-icon color="primary" icon="mdi-receipt-text-edit-outline"/></v-avatar><div><div class="text-h6 font-weight-bold">Sửa phiếu thu</div><div class="text-body-2 opacity-80">{{ recentPaymentEdit.code }} · {{ recentPaymentEdit.household_name }}</div></div></div><v-btn icon="mdi-close" color="white" variant="text" @click="recentPaymentEditModal = false"/></div>
+          <v-card-text class="user-modal__body"><v-alert type="warning" variant="tonal" density="compact" class="mb-4">Chỉ sửa được phiếu chưa phát hành hóa đơn. Hệ thống sẽ tính lại giá và thuế theo kỳ thu mới.</v-alert><v-form id="recent-payment-edit-form" @submit.prevent="saveRecentPaymentEdit"><div class="form-section"><div class="form-section__title"><v-icon icon="mdi-calendar-edit-outline"/>Kỳ thu và thanh toán</div><v-row dense><v-col cols="12" sm="6"><MonthPicker v-model="recentPaymentEdit.from_month" label="Từ tháng"/></v-col><v-col cols="12" sm="6"><MonthPicker v-model="recentPaymentEdit.to_month" label="Đến tháng" :min="recentPaymentEdit.from_month"/></v-col><v-col cols="12"><v-select v-model="recentPaymentEdit.payment_method" :items="[{title:'Tiền mặt',value:'TIEN_MAT'},{title:'Chuyển khoản',value:'CHUYEN_KHOAN'},{title:'Khác',value:'KHAC'}]" label="Hình thức thanh toán" prepend-inner-icon="mdi-credit-card-outline" required/></v-col><v-col cols="12"><v-textarea v-model="recentPaymentEdit.note" label="Ghi chú" rows="3" auto-grow/></v-col></v-row></div></v-form></v-card-text><v-divider/><v-card-actions class="user-modal__actions"><v-spacer/><v-btn variant="text" @click="recentPaymentEditModal = false">Hủy</v-btn><v-btn color="primary" type="submit" form="recent-payment-edit-form" prepend-icon="mdi-content-save-outline" :loading="recentPaymentEditSaving">Lưu phiếu thu</v-btn></v-card-actions>
         </v-card>
       </v-dialog>
       <v-dialog v-model="paymentPriceModal" max-width="760" scrollable>

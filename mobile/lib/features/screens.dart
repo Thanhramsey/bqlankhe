@@ -16,6 +16,7 @@ final routesProvider =
     FutureProvider((ref) => ref.read(apiProvider).get('/mobile/routes'));
 final statsProvider = FutureProvider(
     (ref) => ref.read(apiProvider).get('/mobile/statistics/summary'));
+final paymentDataRefresh = ValueNotifier<int>(0);
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -378,14 +379,32 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
         'per_page': 30
       });
   @override
+  void initState() {
+    super.initState();
+    paymentDataRefresh.addListener(_refreshPayments);
+  }
+
+  void _refreshPayments() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _reload() async {
+    ref.invalidate(routesProvider);
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
     timer?.cancel();
+    paymentDataRefresh.removeListener(_refreshPayments);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Ghi thu tiền')),
+      appBar: AppBar(title: const Text('Ghi thu tiền'), actions: [
+        IconButton(onPressed: _reload, icon: const Icon(Icons.refresh), tooltip: 'Tải lại')
+      ]),
       body: Column(children: [
         Padding(
             padding: const EdgeInsets.all(12),
@@ -423,21 +442,23 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
                   }),
             ])),
         Expanded(
-            child: FutureBuilder<dynamic>(
+            child: RefreshIndicator(
+              onRefresh: _reload,
+              child: FutureBuilder<dynamic>(
                 future: load(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   if (snapshot.hasError) {
-                    return const Center(
-                        child: Text('Không tải được danh sách hộ.'));
+                    return ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 180), Center(child: Text('Không tải được danh sách hộ.'))]);
                   }
                   final list = (snapshot.data?['data'] as List?) ?? [];
                   if (list.isEmpty) {
-                    return const Center(child: Text('Không tìm thấy hộ dân.'));
+                    return ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 180), Center(child: Text('Không tìm thấy hộ dân.'))]);
                   }
                   return ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: list.length,
                       itemBuilder: (context, index) {
                         final household = list[index];
@@ -472,7 +493,7 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
                                     label: const Text('Thu')),
                                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdDetailScreen(household['id'] as int)))));
                       });
-                })),
+                }))),
       ]));
 }
 
@@ -603,8 +624,9 @@ class InvoiceStatusChip extends StatelessWidget {
 }
 
 class CollectScreen extends ConsumerStatefulWidget {
-  const CollectScreen(this.household, {super.key});
+  const CollectScreen(this.household, {this.paymentToReplace, super.key});
   final dynamic household;
+  final dynamic paymentToReplace;
   @override
   ConsumerState<CollectScreen> createState() => _CollectState();
 }
@@ -630,6 +652,17 @@ class _CollectState extends ConsumerState<CollectScreen> {
   }
 
   Future<void> suggest() async {
+    if (widget.paymentToReplace != null) {
+      final payment = widget.paymentToReplace;
+      from = '${payment['from_month']}'.substring(0, 7);
+      to = '${payment['to_month']}'.substring(0, 7);
+      count = monthDifference(from, to);
+      paymentMethod = '${payment['payment_method'] ?? 'TIEN_MAT'}';
+      note.text = '${payment['note'] ?? ''}';
+      if (mounted) setState(() {});
+      await calculate();
+      return;
+    }
     final data = await ref
         .read(apiProvider)
         .get('/mobile/households/${widget.household['id']}/payment-suggestion');
@@ -702,7 +735,9 @@ class _CollectState extends ConsumerState<CollectScreen> {
           data: {
             'household_id': widget.household['id'],
             'from_month': from,
-            'to_month': to
+            'to_month': to,
+            if (widget.paymentToReplace != null)
+              'exclude_payment_id': widget.paymentToReplace['id'],
           });
       if (mounted) setState(() => preview = data);
     } catch (_) {
@@ -715,7 +750,9 @@ class _CollectState extends ConsumerState<CollectScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text('${widget.household['owner_name']}')),
+        appBar: AppBar(title: Text(widget.paymentToReplace == null
+            ? '${widget.household['owner_name']}'
+            : 'Sửa phiếu ${widget.paymentToReplace['code']}')),
         bottomNavigationBar: SafeArea(
             child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -725,8 +762,9 @@ class _CollectState extends ConsumerState<CollectScreen> {
                         onPressed: busy || preview == null ? null : collect,
                         child: busy
                             ? const CircularProgressIndicator()
-                            : Text(
-                                'XÁC NHẬN THU ${preview == null ? '' : money(preview['total'])}'))))),
+                            : Text(widget.paymentToReplace == null
+                                ? 'XÁC NHẬN THU ${preview == null ? '' : money(preview['total'])}'
+                                : 'LƯU PHIẾU ${preview == null ? '' : money(preview['total'])}'))))),
         body: ListView(padding: const EdgeInsets.all(16), children: [
           Text('${widget.household['address']}'),
           const SizedBox(height: 10),
@@ -847,34 +885,78 @@ class _CollectState extends ConsumerState<CollectScreen> {
     if (confirmed != true) return;
     setState(() => busy = true);
     try {
-      final data = await ref.read(apiProvider).post('/mobile/payments', data: {
+      final payload = {
         'household_id': widget.household['id'],
         'from_month': from,
         'to_month': to,
         'payment_method': paymentMethod,
         'note': note.text.trim().isEmpty ? null : note.text.trim(),
-      });
+      };
+      final data = widget.paymentToReplace == null
+          ? await ref.read(apiProvider).post('/mobile/payments', data: payload)
+          : await ref.read(apiProvider).put('/mobile/payments/${widget.paymentToReplace['id']}', data: payload);
       if (mounted) {
+        paymentDataRefresh.value++;
+        ref.invalidate(statsProvider);
         showDialog<void>(
             context: context,
             builder: (dialogContext) => AlertDialog(
-                    title: const Text('Thu tiền thành công'),
-                    content: Text(
-                        'Số phiếu: ${data['code']}\nTổng tiền: ${money(data['amount'])}'),
+                    insetPadding: const EdgeInsets.symmetric(horizontal: 22),
+                    icon: Container(
+                        width: 62,
+                        height: 62,
+                        decoration: const BoxDecoration(
+                            color: Color(0xffe1f5e8), shape: BoxShape.circle),
+                        child: const Icon(Icons.check_rounded,
+                            color: Color(0xff16805a), size: 38)),
+                    title: const Text('Thu tiền thành công',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    content: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                            color: const Color(0xfff4f8f5),
+                            borderRadius: BorderRadius.circular(14)),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text('Phiếu ${data['code']}',
+                              style: const TextStyle(color: Colors.grey)),
+                          const SizedBox(height: 5),
+                          Text(money(data['amount']),
+                              style: const TextStyle(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xff16805a)))
+                        ])),
+                    actionsPadding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                     actions: [
-                      FilledButton.icon(
-                          onPressed: () => issueInvoice(data),
-                          icon: const Icon(Icons.receipt_long),
-                          label: const Text('PHÁT HÀNH HÓA ĐƠN')),
-                      TextButton.icon(
-                          onPressed: () =>
-                              printPosReceipt(dialogContext, ref, data['id']),
-                          icon: const Icon(Icons.print),
-                          label: const Text('In POS 58')),
-                      FilledButton(
-                          onPressed: () => Navigator.popUntil(
-                              dialogContext, (route) => route.isFirst),
-                          child: const Text('Về danh sách'))
+                      SizedBox(
+                          width: 360,
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: FilledButton.icon(
+                                    onPressed: () => printPosReceipt(
+                                        dialogContext, ref, data['id']),
+                                    icon: const Icon(Icons.print_rounded),
+                                    label: const Text('IN PHIẾU POS 58'))),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: FilledButton.tonalIcon(
+                                    onPressed: () => issueInvoice(data),
+                                    icon: const Icon(Icons.receipt_long_outlined),
+                                    label: const Text('Phát hành hóa đơn'))),
+                            const SizedBox(height: 6),
+                            SizedBox(
+                                width: double.infinity,
+                                child: TextButton.icon(
+                                    onPressed: () => Navigator.popUntil(
+                                        dialogContext, (route) => route.isFirst),
+                                    icon: const Icon(Icons.arrow_back_rounded),
+                                    label: const Text('Về danh sách')))
+                          ]))
                     ]));
       }
     } catch (_) {
@@ -910,9 +992,12 @@ class _CollectState extends ConsumerState<CollectScreen> {
 class TransactionScreen extends ConsumerWidget {
   const TransactionScreen({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) => SimpleList(
+  Widget build(BuildContext context, WidgetRef ref) => ValueListenableBuilder<int>(
+      valueListenable: paymentDataRefresh,
+      builder: (context, version, child) => SimpleList(
       title: 'Giao dịch',
       future: ref.read(apiProvider).get('/mobile/payments'),
+      onRefresh: () async => paymentDataRefresh.value++,
       builder: (item) => ListTile(
           title: Text('${item['household']?['owner_name'] ?? ''}'),
           subtitle: Text(
@@ -923,7 +1008,7 @@ class TransactionScreen extends ConsumerWidget {
               context,
               MaterialPageRoute(
                   builder: (_) =>
-                      TransactionDetailScreen(item['id'] as int)))));
+                      TransactionDetailScreen(item['id'] as int))))));
 }
 
 class AnnouncementScreen extends ConsumerWidget {
@@ -955,6 +1040,7 @@ class TransactionDetailScreen extends ConsumerStatefulWidget {
 
 class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
   bool issuing = false;
+  bool deleting = false;
   late Future<dynamic> future = load();
   Future<dynamic> load() =>
       ref.read(apiProvider).get('/mobile/payments/${widget.id}');
@@ -979,6 +1065,27 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
     }
   }
 
+  Future<void> deletePending(dynamic payment) async {
+    final confirmed = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('Xóa phiếu thu?'),
+      content: Text('Phiếu ${payment['code']} sẽ bị xóa và các tháng đã thu sẽ trở lại trạng thái chưa thu.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Hủy')),
+        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Xóa phiếu'))],
+    ));
+    if (confirmed != true || !mounted) return;
+    setState(() => deleting = true);
+    try {
+      await ref.read(apiProvider).delete('/mobile/payments/${payment['id']}');
+      paymentDataRefresh.value++;
+      ref.invalidate(statsProvider);
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không thể xóa phiếu thu. Phiếu có thể đã được phát hành.')));
+    } finally {
+      if (mounted) setState(() => deleting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Chi tiết giao dịch')),
@@ -995,6 +1102,7 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
             final invoice = item['invoice'];
             final months = (item['months'] as List?) ?? [];
             final issued = invoice?['status'] == 'DA_PHAT_HANH';
+            final editable = invoice?['status'] == 'CHO_PHAT_HANH' && invoice?['invoice_no'] == null;
             return ListView(padding: const EdgeInsets.all(16), children: [
               Text('${item['household']?['owner_name']}',
                   style: Theme.of(context)
@@ -1027,6 +1135,21 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
                               'Tháng ${month('${line['month']}')} · ${money(line['amount'])}'),
                           subtitle: Text(
                               'Giá ${money(line['base_price'])} · Thuế ${line['tax_fee_rate'] ?? 0}% (${money(line['tax_fee_amount'])})\nVăn bản: ${line['document_number'] ?? line['price_period']?['document_number'] ?? '—'}'))),
+              ],
+              if (editable) ...[
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: OutlinedButton.icon(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => CollectScreen(item['household'], paymentToReplace: item))),
+                      icon: const Icon(Icons.edit_calendar_outlined),
+                      label: const Text('Sửa phiếu'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: OutlinedButton.icon(
+                      onPressed: deleting ? null : () => deletePending(item),
+                      icon: deleting ? const SizedBox.square(dimension: 17, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.delete_outline),
+                      label: const Text('Xóa phiếu'))),
+                ]),
               ],
               const SizedBox(height: 18),
               FilledButton.icon(
@@ -1546,14 +1669,20 @@ class SimpleList extends StatelessWidget {
       {required this.title,
       required this.future,
       required this.builder,
+      this.onRefresh,
       super.key});
   final String title;
   final Future<dynamic> future;
   final Widget Function(dynamic) builder;
+  final Future<void> Function()? onRefresh;
   @override
   Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: FutureBuilder<dynamic>(
+      appBar: AppBar(title: Text(title), actions: [
+        if (onRefresh != null) IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh), tooltip: 'Tải lại')
+      ]),
+      body: RefreshIndicator(
+        onRefresh: onRefresh ?? () async {},
+        child: FutureBuilder<dynamic>(
           future: future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1567,11 +1696,12 @@ class SimpleList extends StatelessWidget {
               return const Center(child: Text('Chưa có dữ liệu.'));
             }
             return ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                 itemCount: list.length,
                 itemBuilder: (context, index) => Card(
                     margin: const EdgeInsets.all(6),
                     child: builder(list[index])));
-          }));
+          })));
 }
 
 String money(dynamic value) =>

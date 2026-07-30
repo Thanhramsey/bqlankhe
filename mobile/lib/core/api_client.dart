@@ -26,6 +26,10 @@ class ApiClient {
       (await dio.get(path, queryParameters: query)).data['data'];
   Future<dynamic> post(String path, {Object? data}) async =>
       (await dio.post(path, data: data)).data['data'];
+  Future<dynamic> put(String path, {Object? data}) async =>
+      (await dio.put(path, data: data)).data['data'];
+  Future<dynamic> delete(String path) async =>
+      (await dio.delete(path)).data['data'];
 
   Future<void> download(String path, String savePath) async {
     await dio.download(path, savePath);

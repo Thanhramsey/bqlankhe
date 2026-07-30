@@ -131,6 +131,30 @@ body { margin: 0; }
 @media (max-width: 600px) { .v-container { padding: 14px !important; } .login-card { padding: 28px 22px !important; } }
 @media (max-width: 600px) { .user-modal__header, .user-modal__body { padding: 18px !important; } .avatar-panel { align-items: flex-start; gap: 14px; } .avatar-panel .v-avatar { width: 68px !important; height: 68px !important; } .form-section { padding: 16px 14px 2px; } .status-panel { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 700px) { .payment-table { display: none; } .payment-cards { display: block; } .payment-filter .v-select { max-width: none !important; width: 100%; } .payment-form-card__header { padding: 16px; } }
+
+.payment-table .v-table__wrapper { overflow-x: auto; }
+.payment-table table { min-width: 1080px; }
+.payment-table .payment-action-sticky {
+  position: sticky !important;
+  right: 0;
+  z-index: 3;
+  width: 92px;
+  min-width: 92px;
+  max-width: 92px;
+  white-space: nowrap;
+  background-color: rgb(var(--v-theme-surface)) !important;
+  border-left: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  box-shadow: -10px 0 16px -15px rgba(20, 46, 34, .75);
+}
+.payment-table thead .payment-action-sticky {
+  z-index: 5;
+  background-color: rgb(var(--v-theme-surface)) !important;
+}
+.payment-table tbody tr:hover .payment-action-sticky {
+  background-color: rgb(var(--v-theme-surface)) !important;
+}
+.payment-table .payment-action-sticky::after,
+.payment-table tbody tr:hover .payment-action-sticky::after { display: none !important; }
 @media (max-width: 700px) {
   .invoice-filters, .invoice-filters .v-text-field, .invoice-filters .v-select { width: 100%; min-width: 0; }
   .v-table > .v-table__wrapper > table > thead > tr > th,

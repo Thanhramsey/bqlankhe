@@ -34,6 +34,8 @@ Route::prefix('v1')->group(function () {
             Route::post('payments', [MobileController::class, 'collect'])->middleware('permission:payments.create');
             Route::get('payments', [MobileController::class, 'transactions'])->middleware('permission:payments.view');
             Route::get('payments/{payment}', [MobileController::class, 'transaction'])->middleware('permission:payments.view');
+            Route::put('payments/{payment}', [MobileController::class, 'updatePayment'])->middleware('permission:payments.create');
+            Route::delete('payments/{payment}', [MobileController::class, 'deletePayment'])->middleware('permission:payments.create');
             Route::post('payments/{payment}/issue-invoice', [MobileController::class, 'issueInvoice'])->middleware('permission:payments.create');
             Route::post('payments/{payment}/retry-invoice', [MobileController::class, 'issueInvoice'])->middleware('permission:payments.create');
             Route::get('payments/{payment}/receipt', [MobileController::class, 'receipt'])->middleware('permission:payments.view');
@@ -102,6 +104,7 @@ Route::prefix('v1')->group(function () {
         Route::get('debts-export', [DebtController::class, 'export'])->middleware('permission:payments.view');
         Route::get('payments/options', [PaymentController::class, 'options'])->middleware('permission:payments.create');
         Route::post('payments', [PaymentController::class, 'store'])->middleware('permission:payments.create');
+        Route::put('payments/{payment}', [PaymentController::class, 'update'])->middleware('permission:payments.create');
         Route::delete('payments/{payment}', [PaymentController::class, 'destroy'])->middleware('permission:payments.create');
         Route::post('invoices/publish', [InvoiceController::class, 'publish'])->middleware('permission:payments.create');
         Route::get('invoices', [InvoiceController::class, 'index'])->middleware('permission:payments.view');

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Household;
 use App\Models\HouseholdService;
+use App\Models\CollectionRoute;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Service;
@@ -23,10 +24,13 @@ class MobileCollectorApiTest extends TestCase
         $role->permissions()->attach([$create->id, $view->id]);
         $user = User::factory()->create(['is_active' => true]);
         $user->roles()->attach($role);
+        $route = CollectionRoute::create(['code' => 'MOBILE-R', 'name' => 'Tuyến Mobile', 'is_active' => true]);
+        $user->collectionRoutes()->attach($route);
         $token = $user->createToken('mobile-test')->plainTextToken;
         $service = Service::create(['code' => 'MOBILE', 'name' => 'Thu gom rác', 'monthly_price' => 150000, 'tax_fee' => 10, 'is_active' => true]);
         $household = Household::create(['code' => 'MH1', 'owner_name' => 'Hộ Mobile', 'address' => 'An Khê', 'ward' => 'An Khê', 'is_active' => true]);
         HouseholdService::create(['household_id' => $household->id, 'service_id' => $service->id, 'monthly_price' => 150000, 'started_at' => '2026-01-01', 'is_active' => true]);
+        $household->update(['collection_route_id' => $route->id]);
         $payload = ['household_id' => $household->id, 'from_month' => '2026-07', 'to_month' => '2026-09'];
 
         $this->withToken($token)->getJson('/api/v1/mobile/routes')->assertOk();
@@ -43,6 +47,8 @@ class MobileCollectorApiTest extends TestCase
             ->assertJsonPath('data.from_month', '2026-07-01')
             ->assertJsonPath('data.to_month', '2026-09-01')
             ->json('data');
+        $payment = $this->withToken($token)->putJson('/api/v1/mobile/payments/'.$payment['id'], [...$payload, 'payment_method' => 'TIEN_MAT', 'note' => 'Đã sửa trên app'])
+            ->assertOk()->assertJsonPath('data.code', $payment['code'])->assertJsonPath('data.payment_method', 'TIEN_MAT')->json('data');
         $this->withToken($token)->getJson('/api/v1/mobile/households')
             ->assertOk()->assertJsonPath('data.data.0.latest_payment.to_month', '2026-09-01');
         $this->withToken($token)->getJson('/api/v1/mobile/payments/'.$payment['id'])
@@ -54,6 +60,8 @@ class MobileCollectorApiTest extends TestCase
             ->assertJsonPath('data.household.service', 'Thu gom rác')
             ->assertJsonPath('data.invoice_lookup_url', null);
         $this->withToken($token)->postJson('/api/v1/mobile/payments/preview', $payload)->assertUnprocessable();
+        $this->withToken($token)->deleteJson('/api/v1/mobile/payments/'.$payment['id'])->assertOk();
+        $this->assertSoftDeleted('payments', ['id' => $payment['id']]);
     }
 
     public function test_user_can_change_password_from_mobile(): void
