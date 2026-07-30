@@ -1373,12 +1373,16 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
       ></v-snackbar
     >
     <div v-if="!auth.user" class="login-shell">
-      <v-card class="login-card pa-8 pa-sm-10" width="440">
+      <v-card class="login-card pa-8 pa-sm-10" width="100%" max-width="440">
         <div class="login-logo mx-auto mb-5">
           <img src="/logo.png" alt="Logo Ban Quản lý phường An Khê" />
         </div>
-        <v-card-title class="text-h4 font-weight-bold text-center">Quản lý phí rác</v-card-title>
-        <v-card-subtitle class="text-center mb-7">Ban Quản lý phường An Khê</v-card-subtitle>
+        <v-card-title class="login-title text-h4 font-weight-bold text-center"
+          >Quản lý phí rác</v-card-title
+        >
+        <v-card-subtitle class="login-subtitle text-center mb-7"
+          >Ban Quản lý phường An Khê</v-card-subtitle
+        >
         <v-form @submit.prevent="login">
           <v-text-field
             v-model="credentials.identifier"
