@@ -50,6 +50,8 @@ class CrudController extends Controller
         } elseif ($resource === 'routes') { $q->with(['neighborhood.ward.province', 'users:id,username,name']);
         } elseif ($resource === 'employees') {
             $q->with(['route', 'routes:id,code,name']);
+        } elseif ($resource === 'services') {
+            $q->with(['pricePeriods' => fn ($period) => $period->where('is_active', true)]);
         }$data = $q->latest('id')->paginate(min((int) $request->input('per_page', 15), 100));
 
         return response()->json(['success' => true, 'message' => 'Thành công', 'data' => $data]);

@@ -15,6 +15,8 @@ use Illuminate\Support\Collection;
 
 class DashboardService
 {
+    public function __construct(private readonly ServicePricingService $pricing) {}
+
     public function get(array $input): array
     {
         $to = CarbonImmutable::parse($input['to_date'] ?? now())->endOfDay();
@@ -145,8 +147,7 @@ class DashboardService
                 if ($start->greaterThan($end)) continue;
                 $paid = $subscription->paymentMonths->pluck('month')->map(fn ($month) => CarbonImmutable::parse($month)->format('Y-m'))->flip();
                 $latest = $subscription->paymentMonths->max('month'); if ($latest && (! $latestPaid || CarbonImmutable::parse($latest)->greaterThan($latestPaid))) $latestPaid = CarbonImmutable::parse($latest);
-                $price = (float) ($subscription->service?->monthly_price ?? $subscription->monthly_price); $tax = (float) ($subscription->service?->tax_fee ?? 0); $amount = round($price * (1 + $tax / 100), 2);
-                for ($month = $start; $month->lessThanOrEqualTo($end); $month = $month->addMonth()) if (! $paid->has($month->format('Y-m'))) $unpaid->push(['month' => $month, 'amount' => $amount]);
+                for ($month = $start; $month->lessThanOrEqualTo($end); $month = $month->addMonth()) if (! $paid->has($month->format('Y-m'))) $unpaid->push(['month' => $month, 'amount' => $this->pricing->values($subscription->service, $month)['total']]);
             }
             if ($unpaid->isEmpty()) return null;
             $oldest = $unpaid->sortBy(fn ($item) => $item['month']->timestamp)->first()['month'];

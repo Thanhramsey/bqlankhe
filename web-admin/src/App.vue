@@ -35,6 +35,9 @@ const householdServiceFilter = ref<number | null>(null)
 const paymentRouteFilter = ref<number | null>(null)
 const modal = ref(false)
 const birthDateMenu = ref(false)
+const priceFromDateMenu = ref(false)
+const priceToDateMenu = ref(false)
+const householdServiceDateMenu = ref(false)
 const editing = ref<Record<string, any>>({})
 const rows = ref<any[]>([])
 const households = ref<any[]>([])
@@ -48,6 +51,13 @@ const historyModal = ref(false)
 const paymentHistory = ref<any[]>([])
 const historyHousehold = ref<any>(null)
 const historyLoading = ref(false)
+const priceModal = ref(false)
+const priceLoading = ref(false)
+const priceSaving = ref(false)
+const priceData = ref<any>({ service: null, periods: [], documents: [] })
+const priceEditing = ref<any>(null)
+const paymentPriceModal = ref(false)
+const paymentPriceDetail = ref<any>(null)
 const paymentSubmitting = ref(false)
 const invoiceBusy = ref(false)
 const invoiceSettings = ref<any[]>([])
@@ -324,6 +334,12 @@ function setBirthDate(value: unknown) {
   editing.value.date_of_birth = `${year}-${month}-${day}`
   birthDateMenu.value = false
 }
+function setHouseholdServiceDate(value: unknown) {
+  const date = value instanceof Date ? value : new Date(String(value))
+  if (Number.isNaN(date.getTime())) return
+  editing.value.service_started_at = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  householdServiceDateMenu.value = false
+}
 function debtCollectors(item: any) {
   return item?.collectors?.map((collector: any) => collector.name).join(', ') || '—'
 }
@@ -513,6 +529,66 @@ async function remove(row: any) {
 }
 async function restore(row: any) {
   try { await api(`/${config.value!.endpoint}/${row.id}/restore`, { method: 'POST' }); notify('Đã khôi phục dữ liệu'); await load() } catch (e:any) { error.value = e.message }
+}
+async function openPricePeriods(service: any) {
+  priceModal.value = true
+  priceLoading.value = true
+  priceEditing.value = null
+  try { priceData.value = (await api<any>(`/services/${service.id}/price-periods`)).data }
+  catch (e:any) { error.value = e.message }
+  finally { priceLoading.value = false }
+}
+function editPricePeriod(period: any = null) {
+  priceEditing.value = period ? {
+    ...period,
+    effective_from: period.effective_from?.slice(0, 10),
+    effective_to: period.effective_to?.slice(0, 10) || '',
+    document_date: period.document_date?.slice(0, 10) || '',
+  } : { document_id: null, document_number: '', document_name: '', document_date: '', effective_from: '', effective_to: '', monthly_price: 0, tax_fee: 0, note: '', is_active: true }
+}
+function selectPriceDocument(documentId: number | null) {
+  const document = priceData.value.documents?.find((item:any) => item.id === documentId)
+  if (!document || !priceEditing.value) return
+  priceEditing.value.document_number = document.code || document.document_number || ''
+  priceEditing.value.document_name = document.name || document.title || ''
+  priceEditing.value.document_date = (document.document_date || document.created_at || '').slice(0, 10)
+}
+function setPriceDate(field: 'effective_from' | 'effective_to', value: unknown) {
+  const date = value instanceof Date ? value : new Date(String(value))
+  if (Number.isNaN(date.getTime()) || !priceEditing.value) return
+  const local = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  priceEditing.value[field] = local
+  if (field === 'effective_from') priceFromDateMenu.value = false
+  else priceToDateMenu.value = false
+}
+function showPaymentPriceDetail(payment: any) {
+  paymentPriceDetail.value = payment
+  paymentPriceModal.value = true
+}
+function pricePeriodDocument(item: any) { return { number: item?.document_number || '—', name: item?.document_name || '—' } }
+function pricePeriodEffective(item: any) { return `${birthDateLabel(item?.effective_from)} – ${item?.effective_to ? birthDateLabel(item.effective_to) : 'Không giới hạn'}` }
+async function savePricePeriod() {
+  if (!priceEditing.value || !priceData.value.service) return
+  priceSaving.value = true
+  try {
+    const item = priceEditing.value
+    const path = `/services/${priceData.value.service.id}/price-periods${item.id ? `/${item.id}` : ''}`
+    await api(path, { method: item.id ? 'PUT' : 'POST', body: JSON.stringify(item) })
+    notify(item.id ? 'Đã cập nhật giai đoạn giá' : 'Đã thêm giai đoạn giá')
+    priceEditing.value = null
+    priceData.value = (await api<any>(`/services/${priceData.value.service.id}/price-periods`)).data
+    await load()
+  } catch (e:any) { error.value = e.message }
+  finally { priceSaving.value = false }
+}
+async function deletePricePeriod(period: any) {
+  if (!confirm(`Xóa mức giá theo văn bản ${period.document_number}?`)) return
+  try {
+    await api(`/services/${priceData.value.service.id}/price-periods/${period.id}`, { method: 'DELETE' })
+    notify('Đã xóa giai đoạn giá')
+    priceData.value = (await api<any>(`/services/${priceData.value.service.id}/price-periods`)).data
+    await load()
+  } catch (e:any) { error.value = e.message }
 }
 async function collect(publishInvoice = false) {
   paymentSubmitting.value = true
@@ -962,7 +1038,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <td>
                           <v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip>
                         </td>
-                        <td class="text-right"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></td>
+                        <td class="text-right"><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item prepend-icon="mdi-calculator-variant-outline" title="Chi tiết áp giá" @click="showPaymentPriceDetail(row)" /><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></td>
                       </tr>
                     </tbody></v-table></div>
                   <div class="payment-cards pa-3"><v-card v-for="row in rows" :key="row.id" class="pa-4 mb-3" variant="tonal" rounded="lg"><div class="d-flex justify-space-between ga-3"><div><div class="font-weight-bold">{{ row.household?.owner_name }}</div><div class="text-caption text-medium-emphasis">{{ row.code }} · {{ row.household?.route?.name || 'Chưa có tuyến' }}</div><div v-if="row.invoice?.invoice_no" class="text-caption text-primary font-weight-medium mt-1">HĐ số: {{ row.invoice.invoice_no }}</div></div><v-menu><template #activator="{ props }"><v-btn v-bind="props" icon="mdi-dots-vertical" size="small" variant="text" /></template><v-list density="compact"><v-list-item v-if="row.status === 'DA_THU' && row.invoice?.status !== 'DA_PHAT_HANH'" prepend-icon="mdi-receipt-text-arrow-right-outline" title="Phát hành hóa đơn" @click="publishInvoices([row.id])" /><v-list-item prepend-icon="mdi-printer-outline" title="In phiếu thu" @click="openPaymentPdf(row.id, 'receipt')" /><v-list-item v-if="row.invoice?.status === 'DA_PHAT_HANH'" prepend-icon="mdi-file-document-check-outline" title="In hóa đơn" @click="openPaymentPdf(row.id, 'invoice')" /><v-divider v-if="canDeletePendingPayment(row)" class="my-1"/><v-list-item v-if="canDeletePendingPayment(row)" prepend-icon="mdi-delete-outline" title="Xóa phiếu thu" base-color="error" @click="deletePendingPayment(row)" /></v-list></v-menu></div><v-divider class="my-3" /><div class="d-flex justify-space-between text-body-2 mb-3"><span>{{ monthLabel(row.from_month?.slice(0, 7)) }} – {{ monthLabel(row.to_month?.slice(0, 7)) }}</span><strong class="text-primary">{{ money(row.amount) }}</strong></div><v-chip :color="invoiceStatus(row.invoice)[1]" size="small" variant="tonal">{{ invoiceStatus(row.invoice)[0] }}</v-chip></v-card><div v-if="!rows.length" class="empty-state">Chưa có giao dịch</div></div>
@@ -1018,6 +1094,13 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                     color="secondary"
                     title="Lịch sử thanh toán"
                     @click="showPaymentHistory(item)" /><v-btn
+                    v-if="page === '/services'"
+                    icon="mdi-file-document-edit-outline"
+                    size="small"
+                    variant="text"
+                    color="secondary"
+                    title="Giai đoạn áp giá"
+                    @click="openPricePeriods(item)" /><v-btn
                     icon="mdi-pencil-outline"
                     size="small"
                     variant="text"
@@ -1078,6 +1161,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
               <v-col cols="12"><v-text-field v-model="editing.address" label="Địa chỉ *" prepend-inner-icon="mdi-map-marker-outline" required /></v-col>
               <v-col cols="12"><v-text-field v-model="editing.invoice_address" label="Địa chỉ HĐ" prepend-inner-icon="mdi-receipt-text-outline" hint="Địa chỉ dùng khi xuất hóa đơn; để trống sẽ dùng địa chỉ hộ dân" persistent-hint /></v-col>
               <v-col cols="12"><v-select v-model="editing.service_id" :items="routeOptions.services || []" item-title="name" item-value="id" label="Loại dịch vụ *" prepend-inner-icon="mdi-recycle-variant" required /></v-col>
+              <v-col cols="12" md="6"><v-menu v-model="householdServiceDateMenu" :close-on-content-click="false" location="bottom" max-width="360"><template #activator="{ props }"><v-text-field v-bind="props" :model-value="birthDateLabel(editing.service_started_at)" label="Ngày bắt đầu sử dụng dịch vụ" placeholder="dd/mm/yyyy" prepend-inner-icon="mdi-calendar-start" append-inner-icon="mdi-calendar-chevron-down" hint="Kỳ thu trước ngày này sẽ không được tính" persistent-hint readonly clearable @click:clear.stop="editing.service_started_at = null" /></template><v-date-picker :model-value="editing.service_started_at ? new Date(`${editing.service_started_at}T00:00:00`) : null" title="Chọn ngày bắt đầu dịch vụ" color="primary" show-adjacent-months @update:model-value="setHouseholdServiceDate" /></v-menu></v-col>
               <v-col cols="12"><v-textarea v-model="editing.note" label="Ghi chú" prepend-inner-icon="mdi-note-text-outline" rows="3" auto-grow /></v-col>
             </v-row></div>
             <div class="status-panel"><div><div class="font-weight-bold">Trạng thái hộ dân</div><div class="text-caption text-medium-emphasis">Hộ đang hoạt động mới được đưa vào nghiệp vụ thu phí</div></div><v-switch v-model="editing.is_active" :label="editing.is_active ? 'Đang hoạt động' : 'Ngừng hoạt động'" color="success" hide-details inset /></div>
@@ -1094,6 +1178,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
           </div>
           <v-card-text class="user-modal__body">
             <v-form id="resource-form" @submit.prevent="save">
+              <v-alert v-if="page === '/services' && editing.id" type="info" variant="tonal" density="compact" class="mb-4">Đơn giá và thuế hiện hành được quản lý tại nút <strong>Giai đoạn áp giá</strong> ở danh sách dịch vụ.</v-alert>
               <div class="form-section"><div class="form-section__title"><v-icon :icon="config?.icon || 'mdi-form-select'" /> Thông tin chi tiết</div><v-row dense><v-col v-for="field in config?.fields" :key="field[0]" cols="12" :md="field[0] === 'description' || field[2] === 'multiselect' ? 12 : 6"><v-select
                 v-if="field[2] === 'select' || field[2] === 'multiselect'"
                 v-model="editing[field[0]]"
@@ -1111,6 +1196,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                 :prefix="field[0] === 'monthly_price' ? '₫' : undefined"
                 :suffix="field[0] === 'tax_fee' ? '%' : undefined"
                 :min="field[2] === 'number' ? 0 : undefined"
+                :disabled="page === '/services' && !!editing.id && ['monthly_price','tax_fee'].includes(field[0])"
                 :required="
                   !['phone', 'description', 'password', 'date_of_birth', 'gender', 'identity_number', 'address'].includes(field[0])
                 " /></v-col></v-row></div>
@@ -1134,7 +1220,44 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="profileModal = false">Hủy</v-btn><v-btn color="primary" size="large" type="submit" form="profile-form" prepend-icon="mdi-content-save-outline" :loading="profileSaving">Lưu thay đổi</v-btn></v-card-actions>
         </v-card>
       </v-dialog>
-      <v-dialog v-model="historyModal" max-width="900" scrollable>
+      <v-dialog v-model="paymentPriceModal" max-width="760" scrollable>
+        <v-card class="user-modal" rounded="xl"><div class="user-modal__header"><div><div class="text-h6 font-weight-bold">Chi tiết áp giá</div><div class="text-body-2 opacity-80">{{ paymentPriceDetail?.code }} · {{ paymentPriceDetail?.household?.owner_name }}</div></div><v-btn icon="mdi-close" variant="text" color="white" @click="paymentPriceModal = false" /></div>
+          <v-card-text class="user-modal__body">
+            <v-alert type="info" variant="tonal" density="compact" class="mb-4">Đây là đơn giá và thuế đã được chốt tại thời điểm thu; thay đổi giá về sau không làm thay đổi phiếu này.</v-alert>
+            <div v-for="monthItem in paymentPriceDetail?.months || []" :key="monthItem.id" class="form-section mb-3">
+              <div class="d-flex justify-space-between align-center mb-3"><strong>Tháng {{ monthLabel(monthItem.month?.slice(0,7)) }}</strong><strong class="text-primary">{{ money(monthItem.amount) }}</strong></div>
+              <v-table density="compact"><thead><tr><th>Văn bản và thời gian áp dụng</th><th class="text-right">Số ngày</th><th class="text-right">Giá phân bổ</th><th class="text-right">Thuế</th><th class="text-right">Thành tiền</th></tr></thead><tbody>
+                <tr v-for="(line, index) in monthItem.pricing_breakdown || [{document_number:monthItem.document_number,document_name:monthItem.price_period?.document_name,effective_from:monthItem.month,effective_to:monthItem.month,days:null,base_price:monthItem.base_price,tax_fee_rate:monthItem.tax_fee_rate,tax_fee_amount:monthItem.tax_fee_amount,amount:monthItem.amount}]" :key="index"><td><strong>{{ line.document_number || '—' }}</strong><div class="text-caption text-medium-emphasis">{{ line.document_name || '' }}</div><div class="text-caption">{{ birthDateLabel(line.effective_from) }} – {{ birthDateLabel(line.effective_to) }}</div></td><td class="text-right">{{ line.days || '—' }}</td><td class="text-right">{{ money(line.base_price) }}</td><td class="text-right">{{ line.tax_fee_rate || 0 }}% · {{ money(line.tax_fee_amount) }}</td><td class="text-right font-weight-bold">{{ money(line.amount) }}</td></tr>
+              </tbody></v-table>
+            </div>
+          </v-card-text><v-divider/><v-card-actions><v-spacer/><v-btn variant="text" @click="paymentPriceModal = false">Đóng</v-btn></v-card-actions>
+        </v-card>
+      </v-dialog>
+      <v-dialog v-model="priceModal" max-width="1100" scrollable>
+        <v-card class="user-modal" rounded="xl">
+          <div class="user-modal__header"><div class="d-flex align-center ga-4"><v-avatar color="white" size="50"><v-icon color="primary" icon="mdi-file-document-edit-outline" size="28" /></v-avatar><div><div class="text-h6 font-weight-bold">Giai đoạn áp giá</div><div class="text-body-2 opacity-80">{{ priceData.service?.code }} · {{ priceData.service?.name }}</div></div></div><v-btn icon="mdi-close" variant="text" color="white" @click="priceModal = false" /></div>
+          <v-card-text class="user-modal__body">
+            <div class="d-flex flex-column flex-md-row justify-space-between align-md-center ga-3 mb-4"><v-alert type="info" variant="tonal" density="compact" class="flex-grow-1 mb-0">Mỗi tháng chỉ thuộc một giai đoạn. Phiếu thu luôn lưu lại giá, thuế và văn bản đã áp dụng.</v-alert><v-btn color="primary" prepend-icon="mdi-plus" @click="editPricePeriod()">Thêm giai đoạn</v-btn></div>
+            <v-progress-linear v-if="priceLoading" indeterminate color="primary" />
+            <v-data-table v-else :headers="[{title:'Văn bản',key:'document'},{title:'Hiệu lực',key:'effective'},{title:'Đơn giá/tháng',key:'monthly_price'},{title:'Thuế, phí',key:'tax_fee'},{title:'Trạng thái',key:'is_active'},{title:'',key:'actions',align:'end',sortable:false}]" :items="priceData.periods || []" hover>
+              <template #item.document="{ item }"><div class="font-weight-bold">{{ pricePeriodDocument(item).number }}</div><div class="text-caption text-medium-emphasis">{{ pricePeriodDocument(item).name }}</div></template>
+              <template #item.effective="{ item }">{{ pricePeriodEffective(item) }}</template>
+              <template #item.monthly_price="{ value }"><strong>{{ money(value) }}</strong></template><template #item.tax_fee="{ value }">{{ value }}%</template>
+              <template #item.is_active="{ value }"><v-chip :color="value ? 'success' : 'default'" size="small" variant="tonal">{{ value ? 'Đang áp dụng' : 'Ngừng áp dụng' }}</v-chip></template>
+              <template #item.actions="{ item }"><v-btn icon="mdi-pencil-outline" size="small" variant="text" color="primary" @click="editPricePeriod(item)"/><v-btn icon="mdi-delete-outline" size="small" variant="text" color="error" @click="deletePricePeriod(item)"/></template>
+            </v-data-table>
+            <v-expand-transition><v-card v-if="priceEditing" class="pa-4 mt-5" border rounded="lg"><div class="text-subtitle-1 font-weight-bold mb-4">{{ priceEditing.id ? 'Sửa giai đoạn giá' : 'Thêm giai đoạn giá' }}</div><v-form @submit.prevent="savePricePeriod"><v-row dense>
+              <v-col cols="12" md="6"><v-autocomplete v-model="priceEditing.document_id" :items="priceData.documents || []" item-title="display_name" item-value="id" label="Chọn từ kho tài liệu, văn bản" prepend-inner-icon="mdi-file-document-search-outline" no-data-text="Không có tài liệu đang hoạt động" clearable @update:model-value="selectPriceDocument" /></v-col><v-col cols="12" md="3"><v-text-field v-model="priceEditing.document_number" label="Số văn bản *" required /></v-col><v-col cols="12" md="3"><v-text-field v-model="priceEditing.document_date" type="date" label="Ngày văn bản" /></v-col>
+              <v-col cols="12"><v-text-field v-model="priceEditing.document_name" label="Tên / trích yếu văn bản" /></v-col>
+              <v-col cols="12" md="3"><v-menu v-model="priceFromDateMenu" :close-on-content-click="false" location="bottom" max-width="360"><template #activator="{ props }"><v-text-field v-bind="props" :model-value="birthDateLabel(priceEditing.effective_from)" label="Áp dụng từ ngày *" placeholder="dd/mm/yyyy" prepend-inner-icon="mdi-calendar-start" readonly required /></template><v-date-picker :model-value="priceEditing.effective_from ? new Date(`${priceEditing.effective_from}T00:00:00`) : null" title="Chọn ngày bắt đầu" color="primary" show-adjacent-months @update:model-value="setPriceDate('effective_from', $event)" /></v-menu></v-col>
+              <v-col cols="12" md="3"><v-menu v-model="priceToDateMenu" :close-on-content-click="false" location="bottom" max-width="360"><template #activator="{ props }"><v-text-field v-bind="props" :model-value="birthDateLabel(priceEditing.effective_to)" label="Áp dụng đến hết ngày" placeholder="dd/mm/yyyy" prepend-inner-icon="mdi-calendar-end" readonly clearable @click:clear.stop="priceEditing.effective_to = ''" /></template><v-date-picker :model-value="priceEditing.effective_to ? new Date(`${priceEditing.effective_to}T00:00:00`) : null" :min="priceEditing.effective_from ? new Date(`${priceEditing.effective_from}T00:00:00`) : undefined" title="Chọn ngày kết thúc" color="primary" show-adjacent-months @update:model-value="setPriceDate('effective_to', $event)" /></v-menu></v-col>
+              <v-col cols="12" md="3"><v-text-field v-model.number="priceEditing.monthly_price" type="number" min="0" label="Đơn giá/tháng *" suffix="₫" required /></v-col><v-col cols="12" md="3"><v-text-field v-model.number="priceEditing.tax_fee" type="number" min="0" max="100" step="0.01" label="Thuế, phí *" suffix="%" required /></v-col>
+              <v-col cols="12" md="9"><v-textarea v-model="priceEditing.note" label="Ghi chú" rows="2" auto-grow /></v-col><v-col cols="12" md="3"><v-switch v-model="priceEditing.is_active" color="success" label="Đang áp dụng" inset /></v-col>
+            </v-row><div class="d-flex justify-end ga-2"><v-btn variant="text" @click="priceEditing = null">Hủy</v-btn><v-btn color="primary" type="submit" prepend-icon="mdi-content-save-outline" :loading="priceSaving">Lưu giai đoạn</v-btn></div></v-form></v-card></v-expand-transition>
+          </v-card-text><v-divider/><v-card-actions><v-spacer/><v-btn variant="text" @click="priceModal = false">Đóng</v-btn></v-card-actions>
+        </v-card>
+      </v-dialog>
+      <v-dialog v-model="historyModal" max-width="1000" scrollable>
         <v-card class="user-modal" rounded="xl"><div class="user-modal__header"><div class="d-flex align-center ga-4"><v-avatar color="white" size="50"><v-icon color="primary" icon="mdi-history" size="28" /></v-avatar><div><div class="text-h6 font-weight-bold">Lịch sử thanh toán</div><div class="text-body-2 opacity-80">{{ historyHousehold?.code }} · {{ historyHousehold?.owner_name }}</div></div></div><v-btn icon="mdi-close" variant="text" color="white" @click="historyModal = false" /></div>
           <v-card-text class="user-modal__body"><v-data-table :headers="[{title:'Mã phiếu',key:'code'},{title:'Số hóa đơn',key:'invoice.invoice_no'},{title:'Kỳ thu',key:'period'},{title:'Số tiền',key:'amount'},{title:'Ngày thu',key:'paid_at'},{title:'Người thu',key:'collector.name'},{title:'Hóa đơn',key:'invoice.status'}]" :items="paymentHistory" :loading="historyLoading" hover><template #[`item.invoice.invoice_no`]="{ item }"><span v-if="item.invoice?.invoice_no" class="font-weight-medium text-primary">{{ item.invoice.invoice_no }}</span><span v-else class="text-medium-emphasis">—</span></template><template #item.period="{ item }">{{ new Date(item.from_month).toLocaleDateString('vi-VN',{month:'2-digit',year:'numeric'}) }} – {{ new Date(item.to_month).toLocaleDateString('vi-VN',{month:'2-digit',year:'numeric'}) }}</template><template #item.amount="{ value }"><span class="font-weight-bold text-primary">{{ money(value) }}</span></template><template #item.paid_at="{ value }">{{ value ? new Date(value).toLocaleString('vi-VN') : '—' }}</template><template #[`item.invoice.status`]="{ item }"><v-chip size="small" variant="tonal" color="info">{{ item.invoice?.status || 'Chưa có' }}</v-chip></template><template #no-data><div class="empty-state"><v-icon icon="mdi-receipt-text-outline" size="48" /><div class="mt-2">Hộ dân chưa có lịch sử thanh toán</div></div></template></v-data-table></v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"><v-spacer /><v-btn variant="text" @click="historyModal = false">Đóng</v-btn></v-card-actions></v-card>

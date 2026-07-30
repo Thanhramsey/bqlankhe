@@ -8,6 +8,7 @@ use App\Models\Household;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Services\ExcelExportService;
+use App\Services\ServicePricingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,6 +16,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DebtController extends Controller
 {
+    public function __construct(private readonly ServicePricingService $pricing) {}
+
     public function export(Request $request, ExcelExportService $excel): BinaryFileResponse
     {
         $data = $this->index($request)->getData(true)['data'];
@@ -76,12 +79,9 @@ class DebtController extends Controller
                 if ($start->greaterThan($end)) continue;
 
                 $paidMonths = $subscription->paymentMonths->pluck('month')->map(fn ($month) => CarbonImmutable::parse($month)->format('Y-m'))->flip();
-                $monthlyPrice = (float) ($subscription->service?->monthly_price ?? $subscription->monthly_price);
-                $taxRate = (float) ($subscription->service?->tax_fee ?? 0);
-                $monthlyAmount = round($monthlyPrice * (1 + $taxRate / 100), 2);
                 for ($month = $start; $month->lessThanOrEqualTo($end); $month = $month->addMonth()) {
                     if (! $paidMonths->has($month->format('Y-m'))) {
-                        $unpaid->push(['month' => $month, 'amount' => $monthlyAmount]);
+                        $unpaid->push(['month' => $month, 'amount' => $this->pricing->values($subscription->service, $month)['total']]);
                     }
                 }
             }

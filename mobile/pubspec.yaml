@@ -20,6 +20,7 @@ dependencies:
   esc_pos_utils_plus: ^2.0.4
   screenshot: ^3.0.0
   image: ^4.9.1
+  local_auth: ^3.0.2
 dev_dependencies:
   flutter_test: {sdk: flutter}
   flutter_lints: ^5.0.0

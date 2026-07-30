@@ -73,7 +73,9 @@ class HouseholdManagementTest extends TestCase
         $this->assertSame('Mã hộ *', $sheet->getCell('B1')->getValue());
         $this->assertSame('Địa chỉ HĐ', $sheet->getCell('F1')->getValue());
         $this->assertSame('Mã dịch vụ *', $sheet->getCell('I1')->getValue());
-        $this->assertSame('list', $sheet->getCell('N2')->getDataValidation()->getType());
+        $this->assertSame('Ngày bắt đầu dịch vụ (dd/mm/yyyy)', $sheet->getCell('J1')->getValue());
+        $this->assertSame('01/01/2026', $sheet->getCell('J2')->getValue());
+        $this->assertSame('list', $sheet->getCell('O2')->getDataValidation()->getType());
 
         @unlink($path);
     }

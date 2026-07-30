@@ -120,7 +120,7 @@ class HouseholdController extends Controller
     public function payments(Request $request, Household $household): JsonResponse
     {
         abort_unless($request->user()->hasPermission('households.manage'), 403);
-        $payments = $household->payments()->with(['collector:id,name', 'invoice:id,payment_id,invoice_no,status', 'months'])->latest('paid_at')->paginate(20);
+        $payments = $household->payments()->with(['collector:id,name', 'invoice:id,payment_id,invoice_no,status', 'months.pricePeriod:id,document_number,document_name,effective_from,effective_to,monthly_price,tax_fee'])->latest('paid_at')->paginate(20);
 
         return response()->json(['success' => true, 'message' => 'Thành công', 'data' => $payments]);
     }

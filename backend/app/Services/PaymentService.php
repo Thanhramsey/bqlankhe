@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class PaymentService
 {
+    public function __construct(private readonly ServicePricingService $pricing) {}
+
     public function preview(array $data): array
     {
         $from = CarbonImmutable::createFromFormat('Y-m', $data['from_month'])->startOfMonth();
@@ -31,10 +33,11 @@ class PaymentService
                 if (PaymentMonth::where('household_service_id', $subscription->id)->whereDate('month', $month)->exists()) {
                     throw ValidationException::withMessages(['from_month' => 'Tháng '.$month->format('m/Y').' đã được thu.']);
                 }
-                $price = (float) $subscription->service->monthly_price;
-                $rate = (float) $subscription->service->tax_fee;
-                $tax = round($price * $rate / 100, 2);
-                $items->push(['month' => $month->format('Y-m'), 'service' => $subscription->service->name, 'price' => $price, 'tax_fee_rate' => $rate, 'tax_fee_amount' => $tax, 'amount' => $price + $tax]);
+                $values = $this->pricing->values($subscription->service, $month);
+                $items->push(['month' => $month->format('Y-m'), 'service' => $subscription->service->name,
+                    'price_period_id' => $values['period']?->id, 'document_number' => $values['period']?->document_number ?? collect($values['breakdown'])->pluck('document_number')->unique()->join(', '),
+                    'document_name' => $values['period']?->document_name, 'pricing_breakdown' => $values['breakdown'], 'price' => $values['price'],
+                    'tax_fee_rate' => $values['tax_rate'], 'tax_fee_amount' => $values['tax'], 'amount' => $values['total']]);
             }
         }
 
@@ -86,11 +89,14 @@ class PaymentService
                     if ($duplicate) {
                         throw ValidationException::withMessages(['from_month' => 'Khoảng tháng đã có kỳ thu '.$month->format('m/Y').' cho dịch vụ '.$subscription->service->name.'.']);
                     }
-                    $monthlyPrice = (float) $subscription->service->monthly_price;
-                    $taxFeeRate = (float) $subscription->service->tax_fee;
-                    $amountWithTaxFee = round($monthlyPrice * (1 + $taxFeeRate / 100), 2);
-                    $items[] = ['household_service_id' => $subscription->id, 'month' => $month->toDateString(), 'amount' => $amountWithTaxFee];
-                    $total += $amountWithTaxFee;
+                    $values = $this->pricing->values($subscription->service, $month);
+                    $items[] = ['household_service_id' => $subscription->id,
+                        'service_price_period_id' => $values['period']?->id, 'month' => $month->toDateString(),
+                        'base_price' => $values['price'], 'tax_fee_rate' => $values['tax_rate'],
+                        'tax_fee_amount' => $values['tax'], 'document_number' => $values['period']?->document_number ?? collect($values['breakdown'])->pluck('document_number')->unique()->join(', '),
+                        'pricing_breakdown' => $values['breakdown'],
+                        'amount' => $values['total']];
+                    $total += $values['total'];
                 }
             }
             if (! $items) {
@@ -104,7 +110,7 @@ class PaymentService
             Invoice::create(['payment_id' => $payment->id, 'status' => 'CHO_PHAT_HANH']);
             AuditLog::create(['user_id' => $collectorId, 'action' => 'COLLECT_PAYMENT', 'entity_type' => Payment::class, 'entity_id' => $payment->id, 'new_values' => $payment->toArray(), 'ip_address' => $ip]);
 
-            return $payment->load(['household', 'months', 'invoice']);
+            return $payment->load(['household', 'months.pricePeriod', 'invoice']);
         });
     }
 

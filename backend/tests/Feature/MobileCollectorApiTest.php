@@ -30,6 +30,10 @@ class MobileCollectorApiTest extends TestCase
         $payload = ['household_id' => $household->id, 'from_month' => '2026-07', 'to_month' => '2026-09'];
 
         $this->withToken($token)->getJson('/api/v1/mobile/routes')->assertOk();
+        $this->withToken($token)->getJson('/api/v1/mobile/contacts')
+            ->assertOk()
+            ->assertJsonPath('data.0.name', $user->name)
+            ->assertJsonPath('data.0.position', 'Thu ngân');
 
         $this->withToken($token)->postJson('/api/v1/mobile/payments/preview', $payload)
             ->assertOk()->assertJsonPath('data.month_count', 3)->assertJsonPath('data.total', 495000);

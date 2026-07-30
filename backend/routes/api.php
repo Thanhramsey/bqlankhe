@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\OperatingDirectiveController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RouteExcelController;
+use App\Http\Controllers\Api\ServicePricePeriodController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -39,6 +40,7 @@ Route::prefix('v1')->group(function () {
             Route::get('payments/{payment}/print-data', [MobileController::class, 'printData'])->middleware('permission:payments.view');
             Route::get('payments/{payment}/invoice', [MobileController::class, 'invoice'])->middleware('permission:payments.view');
             Route::get('statistics/summary', [MobileController::class, 'statistics'])->middleware('permission:payments.view');
+            Route::get('contacts', [MobileController::class, 'contacts']);
         });
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::post('auth/profile', [AuthController::class, 'updateProfile']);
@@ -110,6 +112,10 @@ Route::prefix('v1')->group(function () {
         Route::put('invoice-settings', [InvoiceSettingController::class, 'update']);
         Route::get('households/{household}/payment-suggestion', [PaymentController::class, 'suggestion'])->middleware('permission:payments.create');
         Route::get('users/options', [UserController::class, 'options']);
+        Route::get('services/{service}/price-periods', [ServicePricePeriodController::class, 'index'])->middleware('permission:services.manage');
+        Route::post('services/{service}/price-periods', [ServicePricePeriodController::class, 'store'])->middleware('permission:services.manage');
+        Route::put('services/{service}/price-periods/{period}', [ServicePricePeriodController::class, 'update'])->middleware('permission:services.manage');
+        Route::delete('services/{service}/price-periods/{period}', [ServicePricePeriodController::class, 'destroy'])->middleware('permission:services.manage');
         Route::apiResource('users', UserController::class)->except('show');
         Route::get('households-import/template', [HouseholdExcelController::class, 'template']);
         Route::get('households-export', [HouseholdController::class, 'export']);

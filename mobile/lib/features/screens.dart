@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'auth/auth.dart';
 import 'printer/pos_printer.dart';
@@ -128,6 +129,23 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                             ? const CircularProgressIndicator()
                                             : const Text(
                                                 'ĐĂNG NHẬP HỆ THỐNG'))),
+                                if (state.biometricEnabled &&
+                                    state.biometricAvailable) ...[
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                      width: double.infinity,
+                                      height: 50,
+                                      child: OutlinedButton.icon(
+                                          onPressed: state.loading
+                                              ? null
+                                              : () => ref
+                                                  .read(authProvider.notifier)
+                                                  .biometricLogin(),
+                                          icon: const Icon(Icons.fingerprint,
+                                              size: 28),
+                                          label: const Text(
+                                              'ĐĂNG NHẬP BẰNG VÂN TAY')))
+                                ],
                                 const SizedBox(height: 18),
                                 const Text('Phiên bản 1.0.0 · An Khê, Gia Lai',
                                     style: TextStyle(
@@ -196,7 +214,8 @@ class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authProvider).user;
+    final auth = ref.watch(authProvider);
+    final user = auth.user;
     final stats = ref.watch(statsProvider);
     final name = '${user?['name'] ?? ''}';
     return Scaffold(
@@ -279,6 +298,32 @@ class HomeScreen extends ConsumerWidget {
               error: (error, stackTrace) =>
                   const Text('Không tải được thống kê. Kéo xuống để thử lại.'),
             ),
+            const Padding(
+                padding: EdgeInsets.fromLTRB(2, 20, 0, 6),
+                child: Text('Tiện ích nội bộ',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
+            Card(
+                child: ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+                    leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                            color: const Color(0xffe2f1e8),
+                            borderRadius: BorderRadius.circular(13)),
+                        child: const Icon(Icons.contact_phone_outlined,
+                            color: Color(0xff176b45))),
+                    title: const Text('Danh bạ đơn vị',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle:
+                        const Text('Tra cứu và liên hệ cán bộ, nhân viên'),
+                    trailing:
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const DirectoryScreen())))),
           ]),
         ));
   }
@@ -741,7 +786,26 @@ class _CollectState extends ConsumerState<CollectScreen> {
                 style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xff16a34a)))
+                    color: Color(0xff16a34a))),
+            const SizedBox(height: 12),
+            Card(
+                margin: EdgeInsets.zero,
+                color: const Color(0xfff4f8f5),
+                child: ExpansionTile(
+                    leading: const Icon(Icons.fact_check_outlined,
+                        color: Color(0xff16805a)),
+                    title: const Text('Chi tiết áp giá',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Giá, thuế và văn bản theo từng tháng'),
+                    children: [
+                      for (final line in (preview['items'] as List? ?? []))
+                        ListTile(
+                            dense: true,
+                            title: Text(
+                                'Tháng ${month('${line['month']}')} · ${money(line['total'])}'),
+                            subtitle: Text(
+                                '${money(line['price'])} + ${line['tax_fee_rate'] ?? 0}% thuế\nVăn bản: ${line['document_number'] ?? '—'}${line['document_name'] == null ? '' : ' · ${line['document_name']}'}'))
+                    ]))
           ],
           const SizedBox(height: 22),
           DropdownButtonFormField<String>(
@@ -929,6 +993,7 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
             }
             final item = snapshot.data;
             final invoice = item['invoice'];
+            final months = (item['months'] as List?) ?? [];
             final issued = invoice?['status'] == 'DA_PHAT_HANH';
             return ListView(padding: const EdgeInsets.all(16), children: [
               Text('${item['household']?['owner_name']}',
@@ -949,6 +1014,20 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
                   invoiceStatus('${invoice?['status'] ?? 'CHO_PHAT_HANH'}')),
               if (invoice?['invoice_no'] != null)
                 DetailRow('Số hóa đơn', '${invoice['invoice_no']}'),
+              if (months.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('Chi tiết tính tiền',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                for (final line in months)
+                  Card(
+                      child: ListTile(
+                          dense: true,
+                          title: Text(
+                              'Tháng ${month('${line['month']}')} · ${money(line['amount'])}'),
+                          subtitle: Text(
+                              'Giá ${money(line['base_price'])} · Thuế ${line['tax_fee_rate'] ?? 0}% (${money(line['tax_fee_amount'])})\nVăn bản: ${line['document_number'] ?? line['price_period']?['document_number'] ?? '—'}'))),
+              ],
               const SizedBox(height: 18),
               FilledButton.icon(
                   onPressed: () => printPosReceipt(context, ref, widget.id),
@@ -1045,7 +1124,8 @@ class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authProvider).user;
+    final auth = ref.watch(authProvider);
+    final user = auth.user;
     final name = '${user?['name'] ?? ''}';
     return Scaffold(
         appBar: AppBar(title: const Text('Cá nhân')),
@@ -1061,10 +1141,36 @@ class ProfileScreen extends ConsumerWidget {
                   style: const TextStyle(
                       fontSize: 20, fontWeight: FontWeight.bold))),
           ListTile(
-              leading: const Icon(Icons.phone),
+              leading: const Icon(Icons.phone, color: Color(0xff16805a)),
               title: Text('${user?['phone'] ?? 'Chưa cập nhật'}')),
+          SwitchListTile(
+              secondary: Icon(Icons.fingerprint,
+                  color: auth.biometricAvailable
+                      ? const Color(0xffd28716)
+                      : Colors.grey,
+                  size: 28),
+              title: const Text('Đăng nhập bằng vân tay'),
+              subtitle: Text(!auth.biometricAvailable
+                  ? 'Thiết bị chưa có hoặc chưa cài đặt vân tay'
+                  : auth.biometricEnabled
+                      ? 'Đang bật trên thiết bị này'
+                      : 'Dùng vân tay thay cho mật khẩu'),
+              activeThumbColor: const Color(0xff176b45),
+              value: auth.biometricEnabled,
+              onChanged: !auth.biometricAvailable
+                  ? null
+                  : (value) async {
+                      final success = await ref
+                          .read(authProvider.notifier)
+                          .setBiometricEnabled(value);
+                      if (!success && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text(
+                                'Không xác thực được vân tay. Hãy kiểm tra cài đặt thiết bị.')));
+                      }
+                    }),
           ListTile(
-              leading: const Icon(Icons.print),
+              leading: const Icon(Icons.print, color: Color(0xff7357b5)),
               title: const Text('Máy in Bluetooth'),
               subtitle: Text(PosPrinter.instance.connected
                   ? 'Đã kết nối ${PosPrinter.instance.deviceName ?? ''}'
@@ -1073,13 +1179,23 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const PrinterScreen()))),
           ListTile(
-              leading: const Icon(Icons.folder_copy_outlined),
+              leading: const Icon(Icons.contact_phone_outlined,
+                  color: Color(0xff2474b5)),
+              title: const Text('Danh bạ đơn vị'),
+              subtitle: const Text('Tra cứu cán bộ, nhân viên'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const DirectoryScreen()))),
+          ListTile(
+              leading: const Icon(Icons.folder_copy_outlined,
+                  color: Color(0xffdd7f18)),
               title: const Text('Văn bản, tài liệu'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const DocumentsScreen()))),
           ListTile(
-              leading: const Icon(Icons.password_outlined),
+              leading:
+                  const Icon(Icons.password_outlined, color: Color(0xff168b82)),
               title: const Text('Đổi mật khẩu'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(
@@ -1092,6 +1208,184 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () => ref.read(authProvider.notifier).logout())
         ]));
   }
+}
+
+class DirectoryScreen extends ConsumerStatefulWidget {
+  const DirectoryScreen({super.key});
+  @override
+  ConsumerState<DirectoryScreen> createState() => _DirectoryScreenState();
+}
+
+class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
+  String search = '';
+  Timer? timer;
+
+  Future<dynamic> load() => ref.read(apiProvider).get('/mobile/contacts',
+      query: {if (search.isNotEmpty) 'search': search});
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> open(String scheme, dynamic value) async {
+    final text = '${value ?? ''}'.trim();
+    if (text.isEmpty) return;
+    final uri = Uri.parse(
+        '$scheme:${scheme == 'tel' ? text.replaceAll(' ', '') : text}');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không mở được ứng dụng phù hợp.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(title: const Text('Danh bạ đơn vị')),
+      body: Column(children: [
+        Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+            child: TextField(
+                decoration: const InputDecoration(
+                    hintText: 'Tìm tên, chức vụ, SĐT, email...',
+                    prefixIcon: Icon(Icons.search),
+                    suffixIcon: Icon(Icons.manage_search)),
+                onChanged: (value) {
+                  timer?.cancel();
+                  timer = Timer(const Duration(milliseconds: 350),
+                      () => setState(() => search = value.trim()));
+                })),
+        Expanded(
+            child: FutureBuilder<dynamic>(
+                future: load(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return const Center(
+                        child: Text('Không tải được danh bạ đơn vị.'));
+                  }
+                  final contacts = (snapshot.data as List?) ?? [];
+                  if (contacts.isEmpty) {
+                    return const Center(
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.person_search_outlined,
+                          size: 58, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text('Không tìm thấy người dùng phù hợp.')
+                    ]));
+                  }
+                  return ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                      itemCount: contacts.length,
+                      itemBuilder: (context, index) {
+                        final item = contacts[index];
+                        final avatar = item['avatar_url'];
+                        return Card(
+                            child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(children: [
+                                  Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        CircleAvatar(
+                                            radius: 28,
+                                            backgroundColor:
+                                                const Color(0xffdcefe4),
+                                            backgroundImage: avatar == null
+                                                ? null
+                                                : NetworkImage('$avatar'),
+                                            child: avatar == null
+                                                ? Text(
+                                                    '${item['name'] ?? '?'}'[0]
+                                                        .toUpperCase(),
+                                                    style: const TextStyle(
+                                                        color:
+                                                            Color(0xff176b45),
+                                                        fontSize: 21,
+                                                        fontWeight:
+                                                            FontWeight.w900))
+                                                : null),
+                                        const SizedBox(width: 13),
+                                        Expanded(
+                                            child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                              Text('${item['name']}',
+                                                  style: const TextStyle(
+                                                      color: Color(0xff19372a),
+                                                      fontSize: 17,
+                                                      fontWeight:
+                                                          FontWeight.w900)),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                  '${item['position']?.toString().isNotEmpty == true ? item['position'] : 'Chưa cập nhật chức vụ'}${item['age'] == null ? '' : ' · ${item['age']} tuổi'}',
+                                                  style: const TextStyle(
+                                                      color: Color(0xff527164),
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                            ])),
+                                      ]),
+                                  const Divider(height: 24),
+                                  _ContactLine(Icons.phone_outlined,
+                                      'Điện thoại', item['phone']),
+                                  _ContactLine(Icons.email_outlined, 'Email',
+                                      item['email']),
+                                  _ContactLine(Icons.location_on_outlined,
+                                      'Địa chỉ', item['address']),
+                                  const SizedBox(height: 8),
+                                  Row(children: [
+                                    Expanded(
+                                        child: OutlinedButton.icon(
+                                            onPressed: item['phone'] == null
+                                                ? null
+                                                : () =>
+                                                    open('tel', item['phone']),
+                                            icon: const Icon(Icons.call),
+                                            label: const Text('Gọi điện'))),
+                                    const SizedBox(width: 9),
+                                    Expanded(
+                                        child: OutlinedButton.icon(
+                                            onPressed: item['email'] == null
+                                                ? null
+                                                : () => open(
+                                                    'mailto', item['email']),
+                                            icon:
+                                                const Icon(Icons.mail_outline),
+                                            label: const Text('Gửi email')))
+                                  ])
+                                ])));
+                      });
+                }))
+      ]));
+}
+
+class _ContactLine extends StatelessWidget {
+  const _ContactLine(this.icon, this.label, this.value);
+  final IconData icon;
+  final String label;
+  final dynamic value;
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 19, color: const Color(0xff488168)),
+        const SizedBox(width: 9),
+        SizedBox(
+            width: 74,
+            child:
+                Text(label, style: const TextStyle(color: Color(0xff75867d)))),
+        Expanded(
+            child: Text('${value?.toString().isNotEmpty == true ? value : '—'}',
+                style: const TextStyle(fontWeight: FontWeight.w600)))
+      ]));
 }
 
 class DocumentsScreen extends ConsumerStatefulWidget {

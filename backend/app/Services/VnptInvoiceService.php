@@ -12,7 +12,7 @@ class VnptInvoiceService
 
     public function publish(Payment $payment, ?int $issuerId = null): array
     {
-        $payment->loadMissing(['household.services.service', 'invoice']);
+        $payment->loadMissing(['household.services.service', 'months.householdService.service', 'invoice']);
         $invoice = $payment->invoice;
         if (! $invoice) throw ValidationException::withMessages(['invoice' => 'Giao dịch chưa có hóa đơn chờ phát hành.']);
         if ($invoice->status === 'DA_PHAT_HANH') throw ValidationException::withMessages(['invoice' => 'Hóa đơn đã được phát hành.']);
@@ -49,13 +49,23 @@ class VnptInvoiceService
 
     private function buildInvoiceXml(Payment $payment, array $settings): string
     {
-        $household = $payment->household; $subscription = $household->services->first();
-        $taxRate = (float) ($subscription?->service?->tax_fee ?? 0); $total = (float) $payment->amount;
-        $base = round($total / (1 + $taxRate / 100), 2); $tax = $total - $base;
+        $household = $payment->household;
+        $total = (float) $payment->amount;
+        $base = round($payment->months->sum(fn ($month) => (float) ($month->base_price ?? $month->amount)), 2);
+        $tax = round($payment->months->sum(fn ($month) => (float) ($month->tax_fee_amount ?? 0)), 2);
         $period = $payment->from_month->format('m/Y').' - '.$payment->to_month->format('m/Y');
         $key = $payment->code;
         $e = fn ($value) => htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
-        return '<Invoices><Inv><key>'.$e($key).'</key><Invoice><CusCode>'.$e($household->code).'</CusCode><CusName>'.$e($household->owner_name).'</CusName><CusAddress>'.$e($household->invoice_address ?: $household->address).'</CusAddress><CusPhone>'.$e($household->phone).'</CusPhone><CusTaxCode>'.$e($household->tax_code).'</CusTaxCode><Buyer>'.$e($household->representative ?: $household->owner_name).'</Buyer><ArisingDate>'.now()->format('d/m/Y').'</ArisingDate><PaymentMethod>TM/CK</PaymentMethod><Products><Product><ProdName>'.$e('Dịch vụ thu gom rác kỳ '.$period).'</ProdName><ProdUnit>Gói</ProdUnit><ProdQuantity>1</ProdQuantity><ProdPrice>'.round($base).'</ProdPrice><Amount>'.round($base).'</Amount><VATRate>'.$taxRate.'</VATRate><VATAmount>'.round($tax).'</VATAmount></Product></Products><Total>'.round($base).'</Total><VATAmount>'.round($tax).'</VATAmount><Amount>'.round($total).'</Amount><AmountInWords>'.$e(number_format($total, 0, ',', '.').' đồng').'</AmountInWords><ComName>'.$e($settings['Tên đơn vị']).'</ComName><ComTaxCode>'.$e($settings['Mã số thuế']).'</ComTaxCode><ComAddress>'.$e($settings['Địa chỉ']).'</ComAddress><ComPhone>'.$e($settings['Số điện thoại']).'</ComPhone></Invoice></Inv></Invoices>';
+        $products = $payment->months->flatMap(function ($month) use ($e) {
+            $service = $month->householdService?->service?->name ?? 'Dịch vụ thu gom rác';
+            $lines = $month->pricing_breakdown ?: [['document_number' => $month->document_number, 'effective_from' => $month->month->toDateString(), 'effective_to' => $month->month->copy()->endOfMonth()->toDateString(), 'days' => $month->month->daysInMonth, 'days_in_month' => $month->month->daysInMonth, 'base_price' => (float) $month->base_price, 'tax_fee_rate' => (float) $month->tax_fee_rate, 'tax_fee_amount' => (float) $month->tax_fee_amount]];
+            return collect($lines)->map(function (array $line) use ($e, $service, $month) {
+                $range = ($line['days'] ?? null) === ($line['days_in_month'] ?? null) ? '' : ' ('.$line['effective_from'].' - '.$line['effective_to'].')';
+                $name = $service.' tháng '.$month->month->format('m/Y').' - theo '.$line['document_number'].$range;
+                return '<Product><ProdName>'.$e($name).'</ProdName><ProdUnit>Tháng</ProdUnit><ProdQuantity>1</ProdQuantity><ProdPrice>'.round((float) $line['base_price']).'</ProdPrice><Amount>'.round((float) $line['base_price']).'</Amount><VATRate>'.(float) $line['tax_fee_rate'].'</VATRate><VATAmount>'.round((float) $line['tax_fee_amount']).'</VATAmount></Product>';
+            });
+        })->join('');
+        return '<Invoices><Inv><key>'.$e($key).'</key><Invoice><CusCode>'.$e($household->code).'</CusCode><CusName>'.$e($household->owner_name).'</CusName><CusAddress>'.$e($household->invoice_address ?: $household->address).'</CusAddress><CusPhone>'.$e($household->phone).'</CusPhone><CusTaxCode>'.$e($household->tax_code).'</CusTaxCode><Buyer>'.$e($household->representative ?: $household->owner_name).'</Buyer><ArisingDate>'.now()->format('d/m/Y').'</ArisingDate><PaymentMethod>TM/CK</PaymentMethod><Products>'.$products.'</Products><Total>'.round($base).'</Total><VATAmount>'.round($tax).'</VATAmount><Amount>'.round($total).'</Amount><AmountInWords>'.$e(number_format($total, 0, ',', '.').' đồng').'</AmountInWords><ComName>'.$e($settings['Tên đơn vị']).'</ComName><ComTaxCode>'.$e($settings['Mã số thuế']).'</ComTaxCode><ComAddress>'.$e($settings['Địa chỉ']).'</ComAddress><ComPhone>'.$e($settings['Số điện thoại']).'</ComPhone><Note>'.$e('Kỳ thu '.$period).'</Note></Invoice></Inv></Invoices>';
     }
 
     private function soapEnvelope(string $xml, array $settings, string $account, string $accountPassword, string $username, string $password): string

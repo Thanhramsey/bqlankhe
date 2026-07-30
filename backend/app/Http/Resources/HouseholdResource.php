@@ -14,6 +14,7 @@ class HouseholdResource extends JsonResource
             'route' => $this->whenLoaded('route'),
             'services' => $this->whenLoaded('services'),
             'service_id' => $this->whenLoaded('services', fn () => $this->services->first()?->service_id),
+            'service_started_at' => $this->whenLoaded('services', fn () => $this->services->first()?->started_at?->format('Y-m-d')),
         ];
     }
 }

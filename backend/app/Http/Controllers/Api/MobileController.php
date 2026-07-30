@@ -8,6 +8,7 @@ use App\Models\CollectionRoute;
 use App\Models\Household;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\User;
 use App\Services\InvoiceSettingService;
 use App\Services\PaymentService;
 use App\Services\VnptInvoiceService;
@@ -30,6 +31,30 @@ class MobileController extends Controller
         }
 
         return $this->ok($query->orderBy('name')->get(['id', 'code', 'name']));
+    }
+
+    public function contacts(Request $request): JsonResponse
+    {
+        $query = User::query()->where('is_active', true)->with('roles:id,name');
+        if ($request->filled('search')) {
+            $term = '%'.trim((string) $request->input('search')).'%';
+            $query->where(fn ($user) => $user->whereAny(['name', 'phone', 'email', 'address'], 'like', $term)
+                ->orWhereHas('roles', fn ($role) => $role->where('name', 'like', $term)));
+        }
+        $contacts = $query->orderBy('name')->get(['id', 'name', 'date_of_birth', 'phone', 'email', 'address', 'avatar'])
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'date_of_birth' => $user->date_of_birth?->format('Y-m-d'),
+                'age' => $user->date_of_birth?->age,
+                'position' => $user->roles->pluck('name')->join(', '),
+                'phone' => $user->phone,
+                'email' => $user->email,
+                'address' => $user->address,
+                'avatar_url' => $user->avatar ? asset('storage/'.$user->avatar) : null,
+            ]);
+
+        return $this->ok($contacts);
     }
 
     public function households(Request $request, ?CollectionRoute $route = null): JsonResponse
@@ -67,7 +92,7 @@ class MobileController extends Controller
     {
         $this->authorizeHousehold($request, $household);
 
-        return $this->ok($household->payments()->with(['invoice', 'months'])->latest('paid_at')->paginate(20));
+        return $this->ok($household->payments()->with(['invoice', 'months.pricePeriod'])->latest('paid_at')->paginate(20));
     }
 
     public function suggestion(Request $request, Household $household): JsonResponse
@@ -111,7 +136,7 @@ class MobileController extends Controller
     {
         $this->authorizePayment($request, $payment);
 
-        return $this->ok($payment->load(['household.route', 'household.services.service', 'collector:id,name', 'months', 'invoice']));
+        return $this->ok($payment->load(['household.route', 'household.services.service', 'collector:id,name', 'months.pricePeriod', 'invoice']));
     }
 
     public function issueInvoice(Request $request, Payment $payment, VnptInvoiceService $service): JsonResponse

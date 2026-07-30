@@ -30,6 +30,7 @@ class SaveHouseholdRequest extends FormRequest
             'ward' => ['nullable', 'string', 'max:100'],
             'collection_route_id' => ['nullable', 'exists:collection_routes,id'],
             'service_id' => ['required', 'integer', 'exists:services,id'],
+            'service_started_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string'],
             'is_active' => ['required', 'boolean'],
         ];
