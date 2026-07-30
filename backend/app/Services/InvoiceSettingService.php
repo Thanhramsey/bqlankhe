@@ -11,7 +11,7 @@ class InvoiceSettingService
     public const DEFINITIONS = [
         'Tên đơn vị' => ['organization', false], 'Mã số thuế' => ['organization', false], 'Số điện thoại' => ['organization', false],
         'Địa chỉ' => ['organization', false], 'Số tài khoản ngân hàng' => ['bank', false], 'Người đại diện' => ['organization', false],
-        'Mẫu số hóa đơn' => ['invoice', false], 'Ký hiệu hóa đơn' => ['invoice', false],
+        'Mẫu số hóa đơn' => ['invoice', false], 'Ký hiệu hóa đơn' => ['invoice', false], 'Link tra cứu hóa đơn' => ['invoice', false],
         'PUBLISH_SERVICE_ADDRESS_ID' => ['vnpt', false], 'BUSINESS_SERVICE_ADDRESS_ID' => ['vnpt', false], 'PORTAL_SERVICE_ADDRESS_ID' => ['vnpt', false],
         'C_PASSWORD_ID' => ['vnpt', true], 'C_USER_ID' => ['vnpt', false], 'WS_PASSWORD_ID' => ['vnpt', true], 'WS_USER_ID' => ['vnpt', false],
         'Mã Ngân Hàng' => ['bank', false], 'Tên chủ tài khoản' => ['bank', false],

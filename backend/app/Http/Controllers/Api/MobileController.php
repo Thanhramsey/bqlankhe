@@ -136,6 +136,36 @@ class MobileController extends Controller
         return Pdf::loadView('pdf.receipt', ['payment' => $payment, 'settings' => collect($settings->forUi())->pluck('value', 'key')])->setPaper('a5')->download('phieu-thu-'.$payment->code.'.pdf');
     }
 
+    public function printData(Request $request, Payment $payment, InvoiceSettingService $settings): JsonResponse
+    {
+        $this->authorizePayment($request, $payment);
+        $payment->load(['household.services.service', 'collector:id,name', 'invoice']);
+        $values = collect($settings->forUi())->pluck('value', 'key');
+        $household = $payment->household;
+        $invoice = $payment->invoice;
+        $fkey = $invoice?->provider_response['fkey'] ?? $payment->code;
+        $lookup = trim((string) $values->get('Link tra cứu hóa đơn'));
+        if ($lookup !== '' && $invoice?->status === 'DA_PHAT_HANH') {
+            // The receipt displays the lookup portal and Fkey separately so
+            // the printed URL stays short and readable on 58 mm paper.
+            $lookup = str_replace(['?fkey={fkey}', '&fkey={fkey}', '{fkey}'], '', $lookup);
+        } else {
+            $lookup = null;
+        }
+        $bankCode = trim((string) $values->get('Mã Ngân Hàng'));
+        $account = trim((string) $values->get('Số tài khoản ngân hàng'));
+        $qrUrl = ($bankCode !== '' && $account !== '')
+            ? 'https://img.vietqr.io/image/'.rawurlencode($bankCode).'-'.rawurlencode($account).'-qr_only.png?amount='.(int) $payment->amount.'&addInfo='.rawurlencode($payment->code).'&accountName='.rawurlencode((string) $values->get('Tên chủ tài khoản'))
+            : null;
+
+        return $this->ok([
+            'organization' => ['name' => $values->get('Tên đơn vị'), 'address' => $values->get('Địa chỉ'), 'tax_code' => $values->get('Mã số thuế'), 'phone' => $values->get('Số điện thoại'), 'bank_account' => $account, 'bank_code' => $bankCode, 'account_name' => $values->get('Tên chủ tài khoản')],
+            'receipt' => ['code' => $payment->code, 'paid_at' => $payment->paid_at, 'from_month' => $payment->from_month, 'to_month' => $payment->to_month, 'amount' => $payment->amount, 'collector_name' => $payment->collector?->name],
+            'household' => ['code' => $household->code, 'name' => $household->owner_name, 'address' => $household->invoice_address ?: $household->address, 'service' => $household->services->first()?->service?->name],
+            'payment_qr_url' => $qrUrl, 'invoice_lookup_url' => $lookup, 'invoice_fkey' => $invoice?->status === 'DA_PHAT_HANH' ? $fkey : null,
+        ]);
+    }
+
     public function invoice(Request $request, Payment $payment, VnptInvoiceService $service): Response
     {
         $this->authorizePayment($request, $payment);

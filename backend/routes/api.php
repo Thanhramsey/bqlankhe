@@ -36,6 +36,7 @@ Route::prefix('v1')->group(function () {
             Route::post('payments/{payment}/issue-invoice', [MobileController::class, 'issueInvoice'])->middleware('permission:payments.create');
             Route::post('payments/{payment}/retry-invoice', [MobileController::class, 'issueInvoice'])->middleware('permission:payments.create');
             Route::get('payments/{payment}/receipt', [MobileController::class, 'receipt'])->middleware('permission:payments.view');
+            Route::get('payments/{payment}/print-data', [MobileController::class, 'printData'])->middleware('permission:payments.view');
             Route::get('payments/{payment}/invoice', [MobileController::class, 'invoice'])->middleware('permission:payments.view');
             Route::get('statistics/summary', [MobileController::class, 'statistics'])->middleware('permission:payments.view');
         });

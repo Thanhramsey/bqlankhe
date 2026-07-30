@@ -43,6 +43,12 @@ class MobileCollectorApiTest extends TestCase
             ->assertOk()->assertJsonPath('data.data.0.latest_payment.to_month', '2026-09-01');
         $this->withToken($token)->getJson('/api/v1/mobile/payments/'.$payment['id'])
             ->assertOk()->assertJsonPath('data.code', $payment['code'])->assertJsonPath('data.invoice.status', 'CHO_PHAT_HANH');
+        $this->withToken($token)->getJson('/api/v1/mobile/payments/'.$payment['id'].'/print-data')
+            ->assertOk()
+            ->assertJsonPath('data.receipt.code', $payment['code'])
+            ->assertJsonPath('data.household.name', 'Hộ Mobile')
+            ->assertJsonPath('data.household.service', 'Thu gom rác')
+            ->assertJsonPath('data.invoice_lookup_url', null);
         $this->withToken($token)->postJson('/api/v1/mobile/payments/preview', $payload)->assertUnprocessable();
     }
 

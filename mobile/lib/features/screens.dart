@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +9,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'auth/auth.dart';
+import 'printer/pos_printer.dart';
 
 final routesProvider =
     FutureProvider((ref) => ref.read(apiProvider).get('/mobile/routes'));
@@ -35,54 +38,102 @@ class _LoginState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(authProvider);
     return Scaffold(
-        body: SafeArea(
-            child: Center(
-                child: SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
-      child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(children: [
-            const Icon(Icons.recycling, size: 96, color: Color(0xff168451)),
-            const SizedBox(height: 16),
-            const Text('QUẢN LÝ THU PHÍ RÁC',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 28),
-            TextField(
-                controller: user,
-                decoration: const InputDecoration(
-                    labelText: 'Tên đăng nhập',
-                    prefixIcon: Icon(Icons.person_outline))),
-            const SizedBox(height: 14),
-            TextField(
-                controller: pass,
-                obscureText: hidden,
-                onSubmitted: (_) => login(),
-                decoration: InputDecoration(
-                    labelText: 'Mật khẩu',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                        onPressed: () => setState(() => hidden = !hidden),
-                        icon: Icon(hidden
-                            ? Icons.visibility
-                            : Icons.visibility_off)))),
-            if (state.error != null)
-              Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(state.error!,
-                      style: const TextStyle(color: Colors.red))),
-            const SizedBox(height: 20),
-            SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: FilledButton(
-                    onPressed: state.loading ? null : login,
-                    child: state.loading
-                        ? const CircularProgressIndicator()
-                        : const Text('ĐĂNG NHẬP'))),
-            const SizedBox(height: 18),
-            const Text('Phiên bản 1.0.0', style: TextStyle(color: Colors.grey)),
-          ])),
-    ))));
+        body: Container(
+            decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xff0e5638), Color(0xff23825a)])),
+            child: SafeArea(
+                child: Center(
+              child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(22),
+                  child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Card(
+                          elevation: 12,
+                          shadowColor: Colors.black26,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(28)),
+                          child: Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(24, 26, 24, 22),
+                              child: Column(children: [
+                                Container(
+                                    width: 116,
+                                    height: 116,
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: const Color(0xffd9eadf),
+                                            width: 2),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                              color: Color(0x2215633f),
+                                              blurRadius: 18)
+                                        ]),
+                                    child: ClipOval(
+                                        child: Image.asset('assets/logo.png',
+                                            fit: BoxFit.cover))),
+                                const SizedBox(height: 15),
+                                const Text('BAN QUẢN LÝ PHƯỜNG AN KHÊ',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        color: Color(0xff155f3e),
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: .2)),
+                                const SizedBox(height: 5),
+                                const Text('Hệ thống quản lý thu phí rác',
+                                    style: TextStyle(
+                                        color: Color(0xff6b7e74),
+                                        fontSize: 14)),
+                                const SizedBox(height: 26),
+                                TextField(
+                                    controller: user,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Tên đăng nhập',
+                                        prefixIcon:
+                                            Icon(Icons.person_outline))),
+                                const SizedBox(height: 14),
+                                TextField(
+                                    controller: pass,
+                                    obscureText: hidden,
+                                    onSubmitted: (_) => login(),
+                                    decoration: InputDecoration(
+                                        labelText: 'Mật khẩu',
+                                        prefixIcon:
+                                            const Icon(Icons.lock_outline),
+                                        suffixIcon: IconButton(
+                                            onPressed: () => setState(
+                                                () => hidden = !hidden),
+                                            icon: Icon(hidden
+                                                ? Icons.visibility
+                                                : Icons.visibility_off)))),
+                                if (state.error != null)
+                                  Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: Text(state.error!,
+                                          style: const TextStyle(
+                                              color: Colors.red))),
+                                const SizedBox(height: 20),
+                                SizedBox(
+                                    width: double.infinity,
+                                    height: 54,
+                                    child: FilledButton(
+                                        onPressed: state.loading ? null : login,
+                                        child: state.loading
+                                            ? const CircularProgressIndicator()
+                                            : const Text(
+                                                'ĐĂNG NHẬP HỆ THỐNG'))),
+                                const SizedBox(height: 18),
+                                const Text('Phiên bản 1.0.0 · An Khê, Gia Lai',
+                                    style: TextStyle(
+                                        color: Colors.grey, fontSize: 12)),
+                              ]))))),
+            ))));
   }
 
   Future<void> login() async {
@@ -118,15 +169,25 @@ class _ShellState extends State<MainShell> {
             onDestinationSelected: (value) => setState(() => index = value),
             destinations: const [
               NavigationDestination(
-                  icon: Icon(Icons.home_outlined), label: 'Trang chủ'),
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Trang chủ'),
               NavigationDestination(
-                  icon: Icon(Icons.payments_outlined), label: 'Thu tiền'),
+                  icon: Icon(Icons.payments_outlined),
+                  selectedIcon: Icon(Icons.payments_rounded),
+                  label: 'Thu tiền'),
               NavigationDestination(
-                  icon: Icon(Icons.receipt_long_outlined), label: 'Giao dịch'),
+                  icon: Icon(Icons.receipt_long_outlined),
+                  selectedIcon: Icon(Icons.receipt_long_rounded),
+                  label: 'Giao dịch'),
               NavigationDestination(
-                  icon: Icon(Icons.notifications_outlined), label: 'Thông báo'),
+                  icon: Icon(Icons.notifications_outlined),
+                  selectedIcon: Icon(Icons.notifications_rounded),
+                  label: 'Thông báo'),
               NavigationDestination(
-                  icon: Icon(Icons.person_outline), label: 'Cá nhân'),
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'Cá nhân'),
             ]),
       );
 }
@@ -139,43 +200,80 @@ class HomeScreen extends ConsumerWidget {
     final stats = ref.watch(statsProvider);
     final name = '${user?['name'] ?? ''}';
     return Scaffold(
-        appBar: AppBar(title: Text('Xin chào, $name')),
+        appBar: AppBar(title: const Text('Tổng quan hôm nay'), actions: [
+          Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: ClipOval(
+                  child: Image.asset('assets/logo.png',
+                      width: 38, height: 38, fit: BoxFit.cover)))
+        ]),
         body: RefreshIndicator(
           onRefresh: () => ref.refresh(statsProvider.future),
           child: ListView(padding: const EdgeInsets.all(16), children: [
-            Card(
-                child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Row(children: [
-                      CircleAvatar(
-                          radius: 28,
-                          child: Text(name.isEmpty ? '?' : name[0])),
-                      const SizedBox(width: 14),
-                      Expanded(
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                            Text(name,
-                                style: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold)),
-                            Text('${user?['phone'] ?? 'Chưa có số điện thoại'}')
-                          ])),
-                    ]))),
-            const SizedBox(height: 12),
+            Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                        colors: [Color(0xff135f3e), Color(0xff23865c)]),
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x33145f3e),
+                          blurRadius: 18,
+                          offset: Offset(0, 8))
+                    ]),
+                child: Row(children: [
+                  Container(
+                      width: 60,
+                      height: 60,
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: Colors.white),
+                      child: ClipOval(
+                          child: Image.asset('assets/logo.png',
+                              fit: BoxFit.cover))),
+                  const SizedBox(width: 14),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        const Text('Xin chào,',
+                            style: TextStyle(
+                                color: Color(0xffd7eee2), fontSize: 13)),
+                        Text(name,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900)),
+                        Text('${user?['phone'] ?? 'Chưa có số điện thoại'}',
+                            style: const TextStyle(
+                                color: Color(0xffd7eee2), fontSize: 13))
+                      ])),
+                  const Icon(Icons.verified_user_outlined,
+                      color: Color(0xffffd166))
+                ])),
+            const Padding(
+                padding: EdgeInsets.fromLTRB(2, 22, 0, 8),
+                child: Text('Kết quả thu phí',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
             stats.when(
               data: (data) => GridView.count(
                   crossAxisCount: 2,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 1.45,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1.38,
                   children: [
                     Kpi('Hộ đã thu', '${data['households']}',
-                        Icons.home_work_outlined),
+                        Icons.home_work_outlined, const Color(0xff1c7c54)),
                     Kpi('Tiền hôm nay', money(data['total']),
-                        Icons.payments_outlined),
-                    Kpi('Tiền mặt', money(data['cash']), Icons.money),
+                        Icons.payments_outlined, const Color(0xff2563a6)),
+                    Kpi('Tiền mặt', money(data['cash']), Icons.money,
+                        const Color(0xffd48806)),
                     Kpi('Chuyển khoản', money(data['bank_transfer']),
-                        Icons.account_balance),
+                        Icons.account_balance, const Color(0xff7655b5)),
                   ]),
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stackTrace) =>
@@ -187,20 +285,35 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class Kpi extends StatelessWidget {
-  const Kpi(this.label, this.value, this.icon, {super.key});
+  const Kpi(this.label, this.value, this.icon, this.color, {super.key});
   final String label, value;
   final IconData icon;
+  final Color color;
   @override
   Widget build(BuildContext context) => Card(
       child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon, color: const Color(0xff2563eb)),
-            Text(value,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-            Text(label)
-          ])));
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                        color: color.withValues(alpha: .11),
+                        borderRadius: BorderRadius.circular(11)),
+                    child: Icon(icon, color: color, size: 22)),
+                const Spacer(),
+                Text(value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Color(0xff1d3329),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17)),
+                const SizedBox(height: 2),
+                Text(label, style: const TextStyle(color: Color(0xff708077)))
+              ])));
 }
 
 class HouseholdScreen extends ConsumerStatefulWidget {
@@ -285,26 +398,34 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
                         final household = list[index];
                         return Card(
                             margin: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 5),
+                                horizontal: 12, vertical: 6),
                             child: ListTile(
+                                contentPadding:
+                                    const EdgeInsets.fromLTRB(14, 9, 10, 9),
+                                leading: Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                        color: const Color(0xffe2f1e8),
+                                        borderRadius:
+                                            BorderRadius.circular(13)),
+                                    child: const Icon(Icons.home_work_outlined,
+                                        color: Color(0xff176b45))),
                                 title: Text('${household['owner_name']}',
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.bold)),
+                                        color: Color(0xff1c352a),
+                                        fontWeight: FontWeight.w800)),
                                 subtitle: Text(
                                     '${household['code']} · ${household['address']}\n${household['route']?['name'] ?? 'Chưa có tuyến'} · ${latestPaymentLabel(household['latest_payment'])}'),
                                 isThreeLine: true,
-                                trailing: FilledButton(
-                                    onPressed: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                            builder: (_) =>
-                                                CollectScreen(household))),
-                                    child: const Text('Thu tiền')),
-                                onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) => HouseholdDetailScreen(
-                                            household['id'] as int)))));
+                                trailing: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 11, vertical: 9)),
+                                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CollectScreen(household))),
+                                    icon: const Icon(Icons.payments_outlined, size: 17),
+                                    label: const Text('Thu')),
+                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdDetailScreen(household['id'] as int)))));
                       });
                 })),
       ]));
@@ -681,12 +802,11 @@ class _CollectState extends ConsumerState<CollectScreen> {
                           onPressed: () => issueInvoice(data),
                           icon: const Icon(Icons.receipt_long),
                           label: const Text('PHÁT HÀNH HÓA ĐƠN')),
-                      TextButton(
-                          onPressed: () => downloadAndOpen(
-                              ref,
-                              '/mobile/payments/${data['id']}/receipt',
-                              'phieu-thu-${data['code']}.pdf'),
-                          child: const Text('Mở phiếu thu')),
+                      TextButton.icon(
+                          onPressed: () =>
+                              printPosReceipt(dialogContext, ref, data['id']),
+                          icon: const Icon(Icons.print),
+                          label: const Text('In POS 58')),
                       FilledButton(
                           onPressed: () => Navigator.popUntil(
                               dialogContext, (route) => route.isFirst),
@@ -831,12 +951,9 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
                 DetailRow('Số hóa đơn', '${invoice['invoice_no']}'),
               const SizedBox(height: 18),
               FilledButton.icon(
-                  onPressed: () => downloadAndOpen(
-                      ref,
-                      '/mobile/payments/${widget.id}/receipt',
-                      'phieu-thu-${item['code']}.pdf'),
-                  icon: const Icon(Icons.receipt_long),
-                  label: const Text('Mở phiếu thu')),
+                  onPressed: () => printPosReceipt(context, ref, widget.id),
+                  icon: const Icon(Icons.print),
+                  label: const Text('In phiếu POS 58')),
               const SizedBox(height: 10),
               if (!issued)
                 FilledButton.tonalIcon(
@@ -946,10 +1063,15 @@ class ProfileScreen extends ConsumerWidget {
           ListTile(
               leading: const Icon(Icons.phone),
               title: Text('${user?['phone'] ?? 'Chưa cập nhật'}')),
-          const ListTile(
-              leading: Icon(Icons.print),
-              title: Text('Máy in Bluetooth'),
-              subtitle: Text('Chưa cấu hình')),
+          ListTile(
+              leading: const Icon(Icons.print),
+              title: const Text('Máy in Bluetooth'),
+              subtitle: Text(PosPrinter.instance.connected
+                  ? 'Đã kết nối ${PosPrinter.instance.deviceName ?? ''}'
+                  : PosPrinter.instance.deviceName ?? 'Chưa cấu hình'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const PrinterScreen()))),
           ListTile(
               leading: const Icon(Icons.folder_copy_outlined),
               title: const Text('Văn bản, tài liệu'),
@@ -1209,6 +1331,62 @@ String stripHtml(String value) => value
     .replaceAll(RegExp(r'<[^>]+>'), '')
     .replaceAll('&nbsp;', ' ')
     .replaceAll('&amp;', '&');
+
+Future<void> printPosReceipt(
+    BuildContext context, WidgetRef ref, dynamic paymentId) async {
+  final printer = PosPrinter.instance;
+  var ready = printer.connected;
+  if (!ready && printer.deviceAddress != null) {
+    ready = await printer.reconnectSaved();
+  }
+  if (!ready && context.mounted) {
+    final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('Chưa kết nối máy in'),
+              content: const Text(
+                  'Bạn cần kết nối máy in Bluetooth POS 58 trước khi in phiếu.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Để sau')),
+                FilledButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    icon: const Icon(Icons.bluetooth_searching),
+                    label: const Text('Kết nối máy in'))
+              ],
+            ));
+    if (openSettings == true && context.mounted) {
+      ready = await Navigator.push<bool>(context,
+              MaterialPageRoute(builder: (_) => const PrinterScreen())) ==
+          true;
+    }
+  }
+  if (!ready || !context.mounted) return;
+  try {
+    final api = ref.read(apiProvider);
+    final raw = await api.get('/mobile/payments/$paymentId/print-data');
+    final data = Map<String, dynamic>.from(raw as Map);
+    Uint8List? qr;
+    final qrUrl = data['payment_qr_url'];
+    if (qrUrl != null) {
+      final response = await api.dio.get<List<int>>('$qrUrl',
+          options: Options(responseType: ResponseType.bytes));
+      if (response.data != null) qr = Uint8List.fromList(response.data!);
+    }
+    await printer.printReceipt(data, paymentQr: qr);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã gửi phiếu tới máy in POS 58.')));
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Không in được phiếu. Kiểm tra kết nối máy in và thử lại.')));
+    }
+  }
+}
 
 Future<void> downloadAndOpen(
     WidgetRef ref, String endpoint, String fileName) async {

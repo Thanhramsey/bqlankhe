@@ -12,7 +12,8 @@ void main() {
   testWidgets('hiển thị màn hình đăng nhập', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: CollectorApp()));
     await tester.pump();
-    expect(find.text('QUẢN LÝ THU PHÍ RÁC'), findsOneWidget);
+    expect(find.text('BAN QUẢN LÝ PHƯỜNG AN KHÊ'), findsOneWidget);
+    expect(find.text('Hệ thống quản lý thu phí rác'), findsOneWidget);
     expect(find.byType(FilledButton), findsOneWidget);
   });
 }
