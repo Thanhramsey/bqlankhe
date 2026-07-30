@@ -481,8 +481,16 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
                                     style: const TextStyle(
                                         color: Color(0xff1c352a),
                                         fontWeight: FontWeight.w800)),
-                                subtitle: Text(
-                                    '${household['code']} · ${household['address']}\n${household['route']?['name'] ?? 'Chưa có tuyến'} · ${latestPaymentLabel(household['latest_payment'])}'),
+                                subtitle: Text.rich(TextSpan(children: [
+                                  TextSpan(
+                                      text:
+                                          '${household['code']} · ${household['address']}\n${household['route']?['name'] ?? 'Chưa có tuyến'} · '),
+                                  TextSpan(
+                                      text: latestPaymentLabel(
+                                          household['latest_payment']),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w800)),
+                                ])),
                                 isThreeLine: true,
                                 trailing: FilledButton.icon(
                                     style: FilledButton.styleFrom(
