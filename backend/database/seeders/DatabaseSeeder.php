@@ -62,7 +62,7 @@ class DatabaseSeeder extends Seeder
         }
         $route = CollectionRoute::updateOrCreate(['code' => 'AK-01'], ['name' => 'Tuyến trung tâm', 'description' => 'Tuyến thu phí mẫu', 'is_active' => true]);
         $service = Service::updateOrCreate(['code' => 'RAC-HO'], ['name' => 'Thu gom rác hộ gia đình', 'monthly_price' => 30000, 'tax_fee' => 0, 'description' => 'Phí thu gom hàng tháng', 'is_active' => true]);
-        $household = Household::updateOrCreate(['code' => 'HD-0001'], ['owner_name' => 'Nguyễn Văn Mẫu', 'phone' => '0901234567', 'address' => '01 Quang Trung', 'ward' => 'An Khê', 'collection_route_id' => $route->id, 'is_active' => true]);
+        $household = Household::updateOrCreate(['code' => 'HDM-0001909'], ['owner_name' => 'Nguyễn Văn Mẫu', 'phone' => '0901234567', 'address' => '01 Quang Trung', 'ward' => 'An Khê', 'collection_route_id' => $route->id, 'is_active' => true]);
         HouseholdService::updateOrCreate(['household_id' => $household->id, 'service_id' => $service->id], ['monthly_price' => $service->monthly_price, 'started_at' => now()->startOfYear(), 'is_active' => true]);
         SystemSetting::updateOrCreate(['key' => 'organization_name'], ['value' => 'Ban Quản lý phường An Khê', 'type' => 'string', 'group' => 'general', 'description' => 'Tên đơn vị']);
         $invoiceSettings = [
