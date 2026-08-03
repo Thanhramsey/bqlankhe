@@ -16,7 +16,7 @@ Với điện thoại thật, thay `10.0.2.2` bằng IP LAN hoặc domain HTTPS 
 ```bash
 flutter analyze
 flutter test
-flutter build apk --debug --dart-define=API_BASE_URL=https://example.vn/api/v1
+flutter build apk --release --dart-define=API_BASE_URL=https://bql-ankhe-api.onrender.com/api/v1
 ```
 
 ## Phạm vi hiện tại

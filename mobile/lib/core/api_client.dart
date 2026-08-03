@@ -6,12 +6,22 @@ class ApiClient {
   ApiClient(this.storage)
       : dio = Dio(BaseOptions(
             baseUrl: AppConfig.apiBaseUrl,
-            connectTimeout: const Duration(seconds: 12),
-            receiveTimeout: const Duration(seconds: 20))) {
+            // Render Free can take close to a minute to wake after being idle.
+            connectTimeout: const Duration(seconds: 75),
+            receiveTimeout: const Duration(seconds: 90))) {
     dio.interceptors
         .add(InterceptorsWrapper(onRequest: (options, handler) async {
-      final token = await storage.read(key: 'access_token');
-      if (token != null) options.headers['Authorization'] = 'Bearer $token';
+      // Login must never depend on an old encrypted token. Android can retain
+      // secure-storage data whose encryption key is no longer valid after an
+      // app reinstall/restore, which otherwise prevents login altogether.
+      if (!options.path.endsWith('/auth/login')) {
+        try {
+          final token = await storage.read(key: 'access_token');
+          if (token != null) options.headers['Authorization'] = 'Bearer $token';
+        } catch (_) {
+          await storage.deleteAll();
+        }
+      }
       handler.next(options);
     }, onError: (error, handler) async {
       if (error.response?.statusCode == 401) {

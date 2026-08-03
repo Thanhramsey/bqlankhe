@@ -40,6 +40,8 @@ API có thể mất khoảng một phút để thức dậy sau 15 phút không 
 https://bql-ankhe-api.onrender.com/up
 ```
 
+Với môi trường demo, `SESSION_DRIVER` và `CACHE_STORE` dùng `file` để tránh tạo thêm truy vấn tới TiDB cho mỗi request. Token đăng nhập và dữ liệu nghiệp vụ vẫn được lưu trong database.
+
 ## 3. Deploy Vue/Vite trên Vercel
 
 Import cùng repository và đặt:
