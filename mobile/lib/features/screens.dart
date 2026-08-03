@@ -130,23 +130,41 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                             ? const CircularProgressIndicator()
                                             : const Text(
                                                 'ĐĂNG NHẬP HỆ THỐNG'))),
-                                if (state.biometricEnabled &&
-                                    state.biometricAvailable) ...[
-                                  const SizedBox(height: 12),
-                                  SizedBox(
+                                const SizedBox(height: 12),
+                                SizedBox(
                                       width: double.infinity,
                                       height: 50,
                                       child: OutlinedButton.icon(
                                           onPressed: state.loading
                                               ? null
-                                              : () => ref
-                                                  .read(authProvider.notifier)
-                                                  .biometricLogin(),
+                                              : () {
+                                                  if (!state
+                                                      .biometricAvailable) {
+                                                    ScaffoldMessenger.of(context)
+                                                        .showSnackBar(const SnackBar(
+                                                            content: Text(
+                                                                'Thiết bị chưa hỗ trợ hoặc chưa cài đặt vân tay trong Android.')));
+                                                    return;
+                                                  }
+                                                  if (state.biometricEnabled) {
+                                                    ref
+                                                        .read(authProvider
+                                                            .notifier)
+                                                        .biometricLogin();
+                                                    return;
+                                                  }
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(const SnackBar(
+                                                          content: Text(
+                                                              'Hãy đăng nhập bằng mật khẩu, sau đó bật vân tay trong mục Cá nhân.')));
+                                                },
                                           icon: const Icon(Icons.fingerprint,
                                               size: 28),
-                                          label: const Text(
-                                              'ĐĂNG NHẬP BẰNG VÂN TAY')))
-                                ],
+                                          label: Text(!state.biometricAvailable
+                                              ? 'THIẾT BỊ CHƯA CÓ VÂN TAY'
+                                              : state.biometricEnabled
+                                                  ? 'ĐĂNG NHẬP BẰNG VÂN TAY'
+                                                  : 'VÂN TAY CHƯA ĐƯỢC BẬT'))),
                                 const SizedBox(height: 18),
                                 const Text('Phiên bản 1.0.0 · An Khê, Gia Lai',
                                     style: TextStyle(
@@ -156,7 +174,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> login() async {
-    if (user.text.trim().isEmpty || pass.text.length < 8) {
+    if (user.text.trim().isEmpty || pass.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Vui lòng nhập đầy đủ tài khoản và mật khẩu.')));
       return;
@@ -403,7 +421,10 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Ghi thu tiền'), actions: [
-        IconButton(onPressed: _reload, icon: const Icon(Icons.refresh), tooltip: 'Tải lại')
+        IconButton(
+            onPressed: _reload,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Tải lại')
       ]),
       body: Column(children: [
         Padding(
@@ -443,65 +464,77 @@ class _HouseholdsState extends ConsumerState<HouseholdScreen> {
             ])),
         Expanded(
             child: RefreshIndicator(
-              onRefresh: _reload,
-              child: FutureBuilder<dynamic>(
-                future: load(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 180), Center(child: Text('Không tải được danh sách hộ.'))]);
-                  }
-                  final list = (snapshot.data?['data'] as List?) ?? [];
-                  if (list.isEmpty) {
-                    return ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 180), Center(child: Text('Không tìm thấy hộ dân.'))]);
-                  }
-                  return ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: list.length,
-                      itemBuilder: (context, index) {
-                        final household = list[index];
-                        return Card(
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            child: ListTile(
-                                contentPadding:
-                                    const EdgeInsets.fromLTRB(14, 9, 10, 9),
-                                leading: Container(
-                                    width: 44,
-                                    height: 44,
-                                    decoration: BoxDecoration(
-                                        color: const Color(0xffe2f1e8),
-                                        borderRadius:
-                                            BorderRadius.circular(13)),
-                                    child: const Icon(Icons.home_work_outlined,
-                                        color: Color(0xff176b45))),
-                                title: Text('${household['owner_name']}',
-                                    style: const TextStyle(
-                                        color: Color(0xff1c352a),
-                                        fontWeight: FontWeight.w800)),
-                                subtitle: Text.rich(TextSpan(children: [
-                                  TextSpan(
-                                      text:
-                                          '${household['code']} · ${household['address']}\n${household['route']?['name'] ?? 'Chưa có tuyến'} · '),
-                                  TextSpan(
-                                      text: latestPaymentLabel(
-                                          household['latest_payment']),
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800)),
-                                ])),
-                                isThreeLine: true,
-                                trailing: FilledButton.icon(
-                                    style: FilledButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 11, vertical: 9)),
-                                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CollectScreen(household))),
-                                    icon: const Icon(Icons.payments_outlined, size: 17),
-                                    label: const Text('Thu')),
-                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdDetailScreen(household['id'] as int)))));
-                      });
-                }))),
+                onRefresh: _reload,
+                child: FutureBuilder<dynamic>(
+                    future: load(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 180),
+                              Center(
+                                  child: Text('Không tải được danh sách hộ.'))
+                            ]);
+                      }
+                      final list = (snapshot.data?['data'] as List?) ?? [];
+                      if (list.isEmpty) {
+                        return ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 180),
+                              Center(child: Text('Không tìm thấy hộ dân.'))
+                            ]);
+                      }
+                      return ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: list.length,
+                          itemBuilder: (context, index) {
+                            final household = list[index];
+                            return Card(
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                child: ListTile(
+                                    contentPadding:
+                                        const EdgeInsets.fromLTRB(14, 9, 10, 9),
+                                    leading: Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                            color: const Color(0xffe2f1e8),
+                                            borderRadius:
+                                                BorderRadius.circular(13)),
+                                        child: const Icon(Icons.home_work_outlined,
+                                            color: Color(0xff176b45))),
+                                    title: Text('${household['owner_name']}',
+                                        style: const TextStyle(
+                                            color: Color(0xff1c352a),
+                                            fontWeight: FontWeight.w800)),
+                                    subtitle: Text.rich(TextSpan(children: [
+                                      TextSpan(
+                                          text:
+                                              '${household['code']} · ${household['address']}\n${household['route']?['name'] ?? 'Chưa có tuyến'} · '),
+                                      TextSpan(
+                                          text: latestPaymentLabel(
+                                              household['latest_payment']),
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w800)),
+                                    ])),
+                                    isThreeLine: true,
+                                    trailing: FilledButton.icon(
+                                        style: FilledButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 11, vertical: 9)),
+                                        onPressed: () => Navigator.push(context,
+                                            MaterialPageRoute(builder: (_) => CollectScreen(household))),
+                                        icon: const Icon(Icons.payments_outlined, size: 17),
+                                        label: const Text('Thu')),
+                                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdDetailScreen(household['id'] as int)))));
+                          });
+                    }))),
       ]));
 }
 
@@ -739,14 +772,14 @@ class _CollectState extends ConsumerState<CollectScreen> {
   Future<void> calculate() async {
     if (from.isEmpty) return;
     try {
-      final data = await ref.read(apiProvider).post('/mobile/payments/preview',
-          data: {
-            'household_id': widget.household['id'],
-            'from_month': from,
-            'to_month': to,
-            if (widget.paymentToReplace != null)
-              'exclude_payment_id': widget.paymentToReplace['id'],
-          });
+      final data =
+          await ref.read(apiProvider).post('/mobile/payments/preview', data: {
+        'household_id': widget.household['id'],
+        'from_month': from,
+        'to_month': to,
+        if (widget.paymentToReplace != null)
+          'exclude_payment_id': widget.paymentToReplace['id'],
+      });
       if (mounted) setState(() => preview = data);
     } catch (_) {
       if (mounted) {
@@ -758,9 +791,10 @@ class _CollectState extends ConsumerState<CollectScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(widget.paymentToReplace == null
-            ? '${widget.household['owner_name']}'
-            : 'Sửa phiếu ${widget.paymentToReplace['code']}')),
+        appBar: AppBar(
+            title: Text(widget.paymentToReplace == null
+                ? '${widget.household['owner_name']}'
+                : 'Sửa phiếu ${widget.paymentToReplace['code']}')),
         bottomNavigationBar: SafeArea(
             child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -842,7 +876,8 @@ class _CollectState extends ConsumerState<CollectScreen> {
                         color: Color(0xff16805a)),
                     title: const Text('Chi tiết áp giá',
                         style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Giá, thuế và văn bản theo từng tháng'),
+                    subtitle:
+                        const Text('Giá, thuế và văn bản theo từng tháng'),
                     children: [
                       for (final line in (preview['items'] as List? ?? []))
                         ListTile(
@@ -902,7 +937,9 @@ class _CollectState extends ConsumerState<CollectScreen> {
       };
       final data = widget.paymentToReplace == null
           ? await ref.read(apiProvider).post('/mobile/payments', data: payload)
-          : await ref.read(apiProvider).put('/mobile/payments/${widget.paymentToReplace['id']}', data: payload);
+          : await ref.read(apiProvider).put(
+              '/mobile/payments/${widget.paymentToReplace['id']}',
+              data: payload);
       if (mounted) {
         paymentDataRefresh.value++;
         ref.invalidate(statsProvider);
@@ -925,7 +962,8 @@ class _CollectState extends ConsumerState<CollectScreen> {
                         decoration: BoxDecoration(
                             color: const Color(0xfff4f8f5),
                             borderRadius: BorderRadius.circular(14)),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
                           Text('Phiếu ${data['code']}',
                               style: const TextStyle(color: Colors.grey)),
                           const SizedBox(height: 5),
@@ -939,7 +977,8 @@ class _CollectState extends ConsumerState<CollectScreen> {
                     actions: [
                       SizedBox(
                           width: 360,
-                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
                             SizedBox(
                                 width: double.infinity,
                                 height: 52,
@@ -954,14 +993,16 @@ class _CollectState extends ConsumerState<CollectScreen> {
                                 height: 48,
                                 child: FilledButton.tonalIcon(
                                     onPressed: () => issueInvoice(data),
-                                    icon: const Icon(Icons.receipt_long_outlined),
+                                    icon:
+                                        const Icon(Icons.receipt_long_outlined),
                                     label: const Text('Phát hành hóa đơn'))),
                             const SizedBox(height: 6),
                             SizedBox(
                                 width: double.infinity,
                                 child: TextButton.icon(
                                     onPressed: () => Navigator.popUntil(
-                                        dialogContext, (route) => route.isFirst),
+                                        dialogContext,
+                                        (route) => route.isFirst),
                                     icon: const Icon(Icons.arrow_back_rounded),
                                     label: const Text('Về danh sách')))
                           ]))
@@ -1000,23 +1041,24 @@ class _CollectState extends ConsumerState<CollectScreen> {
 class TransactionScreen extends ConsumerWidget {
   const TransactionScreen({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) => ValueListenableBuilder<int>(
+  Widget build(BuildContext context, WidgetRef ref) => ValueListenableBuilder<
+          int>(
       valueListenable: paymentDataRefresh,
       builder: (context, version, child) => SimpleList(
-      title: 'Giao dịch',
-      future: ref.read(apiProvider).get('/mobile/payments'),
-      onRefresh: () async => paymentDataRefresh.value++,
-      builder: (item) => ListTile(
-          title: Text('${item['household']?['owner_name'] ?? ''}'),
-          subtitle: Text(
-              '${month(item['from_month'])} – ${month(item['to_month'])}\nHóa đơn: ${invoiceStatus('${item['invoice']?['status'] ?? 'CHO_PHAT_HANH'}')}'),
-          isThreeLine: true,
-          trailing: Text(money(item['amount'])),
-          onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) =>
-                      TransactionDetailScreen(item['id'] as int))))));
+          title: 'Giao dịch',
+          future: ref.read(apiProvider).get('/mobile/payments'),
+          onRefresh: () async => paymentDataRefresh.value++,
+          builder: (item) => ListTile(
+              title: Text('${item['household']?['owner_name'] ?? ''}'),
+              subtitle: Text(
+                  '${month(item['from_month'])} – ${month(item['to_month'])}\nHóa đơn: ${invoiceStatus('${item['invoice']?['status'] ?? 'CHO_PHAT_HANH'}')}'),
+              isThreeLine: true,
+              trailing: Text(money(item['amount'])),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          TransactionDetailScreen(item['id'] as int))))));
 }
 
 class AnnouncementScreen extends ConsumerWidget {
@@ -1074,12 +1116,21 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
   }
 
   Future<void> deletePending(dynamic payment) async {
-    final confirmed = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
-      title: const Text('Xóa phiếu thu?'),
-      content: Text('Phiếu ${payment['code']} sẽ bị xóa và các tháng đã thu sẽ trở lại trạng thái chưa thu.'),
-      actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Hủy')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Xóa phiếu'))],
-    ));
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('Xóa phiếu thu?'),
+              content: Text(
+                  'Phiếu ${payment['code']} sẽ bị xóa và các tháng đã thu sẽ trở lại trạng thái chưa thu.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Hủy')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: const Text('Xóa phiếu'))
+              ],
+            ));
     if (confirmed != true || !mounted) return;
     setState(() => deleting = true);
     try {
@@ -1088,7 +1139,10 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
       ref.invalidate(statsProvider);
       if (mounted) Navigator.pop(context);
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không thể xóa phiếu thu. Phiếu có thể đã được phát hành.')));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Không thể xóa phiếu thu. Phiếu có thể đã được phát hành.')));
     } finally {
       if (mounted) setState(() => deleting = false);
     }
@@ -1110,7 +1164,8 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
             final invoice = item['invoice'];
             final months = (item['months'] as List?) ?? [];
             final issued = invoice?['status'] == 'DA_PHAT_HANH';
-            final editable = invoice?['status'] == 'CHO_PHAT_HANH' && invoice?['invoice_no'] == null;
+            final editable = invoice?['status'] == 'CHO_PHAT_HANH' &&
+                invoice?['invoice_no'] == null;
             return ListView(padding: const EdgeInsets.all(16), children: [
               Text('${item['household']?['owner_name']}',
                   style: Theme.of(context)
@@ -1133,7 +1188,8 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
               if (months.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 const Text('Chi tiết tính tiền',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 for (final line in months)
                   Card(
@@ -1147,16 +1203,28 @@ class _TransactionDetailState extends ConsumerState<TransactionDetailScreen> {
               if (editable) ...[
                 const SizedBox(height: 14),
                 Row(children: [
-                  Expanded(child: OutlinedButton.icon(
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => CollectScreen(item['household'], paymentToReplace: item))),
-                      icon: const Icon(Icons.edit_calendar_outlined),
-                      label: const Text('Sửa phiếu'))),
+                  Expanded(
+                      child: OutlinedButton.icon(
+                          onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => CollectScreen(
+                                      item['household'],
+                                      paymentToReplace: item))),
+                          icon: const Icon(Icons.edit_calendar_outlined),
+                          label: const Text('Sửa phiếu'))),
                   const SizedBox(width: 10),
-                  Expanded(child: OutlinedButton.icon(
-                      onPressed: deleting ? null : () => deletePending(item),
-                      icon: deleting ? const SizedBox.square(dimension: 17, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.delete_outline),
-                      label: const Text('Xóa phiếu'))),
+                  Expanded(
+                      child: OutlinedButton.icon(
+                          onPressed:
+                              deleting ? null : () => deletePending(item),
+                          icon: deleting
+                              ? const SizedBox.square(
+                                  dimension: 17,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.delete_outline),
+                          label: const Text('Xóa phiếu'))),
                 ]),
               ],
               const SizedBox(height: 18),
@@ -1686,30 +1754,34 @@ class SimpleList extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: Text(title), actions: [
-        if (onRefresh != null) IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh), tooltip: 'Tải lại')
+        if (onRefresh != null)
+          IconButton(
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Tải lại')
       ]),
       body: RefreshIndicator(
-        onRefresh: onRefresh ?? () async {},
-        child: FutureBuilder<dynamic>(
-          future: future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return const Center(child: Text('Không tải được dữ liệu.'));
-            }
-            final list = (snapshot.data?['data'] as List?) ?? [];
-            if (list.isEmpty) {
-              return const Center(child: Text('Chưa có dữ liệu.'));
-            }
-            return ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemCount: list.length,
-                itemBuilder: (context, index) => Card(
-                    margin: const EdgeInsets.all(6),
-                    child: builder(list[index])));
-          })));
+          onRefresh: onRefresh ?? () async {},
+          child: FutureBuilder<dynamic>(
+              future: future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Không tải được dữ liệu.'));
+                }
+                final list = (snapshot.data?['data'] as List?) ?? [];
+                if (list.isEmpty) {
+                  return const Center(child: Text('Chưa có dữ liệu.'));
+                }
+                return ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: list.length,
+                    itemBuilder: (context, index) => Card(
+                        margin: const EdgeInsets.all(6),
+                        child: builder(list[index])));
+              })));
 }
 
 String money(dynamic value) =>

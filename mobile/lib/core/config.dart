@@ -1,5 +1,5 @@
 class AppConfig {
   static const apiBaseUrl = String.fromEnvironment('API_BASE_URL',
-      defaultValue: 'http://10.0.2.2:8000/api/v1');
+      defaultValue: 'https://bql-ankhe-api.onrender.com/api/v1');
   static const appName = 'Thu phí An Khê';
 }
