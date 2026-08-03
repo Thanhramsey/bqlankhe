@@ -3,8 +3,8 @@
 :root { font-family: 'Be Vietnam Pro', sans-serif; }
 body { margin: 0; }
 .v-application { font-family: 'Be Vietnam Pro', sans-serif !important; }
-.login-shell { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 15% 15%, rgba(55, 180, 112, .22), transparent 32%), radial-gradient(circle at 88% 82%, rgba(232, 169, 54, .18), transparent 30%), #f3f7f4; }
-.login-card { box-shadow: 0 24px 80px rgba(25, 74, 49, .14) !important; }
+.login-shell { min-height: 100vh; min-height: 100dvh; width: 100%; display: grid; place-items: center; padding: clamp(14px, 3vw, 28px); overflow-x: hidden; background: radial-gradient(circle at 15% 15%, rgba(55, 180, 112, .22), transparent 32%), radial-gradient(circle at 88% 82%, rgba(232, 169, 54, .18), transparent 30%), #f3f7f4; }
+.login-card { width: 100%; min-width: 0; border-radius: 24px !important; box-shadow: 0 24px 80px rgba(25, 74, 49, .14) !important; }
 .login-logo { width: 112px; height: 112px; display: grid; place-items: center; overflow: hidden; border: 4px solid white; border-radius: 50%; background: white; box-shadow: 0 12px 30px rgba(22, 132, 81, .24); }
 .login-logo img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .kpi-card { transition: transform .2s ease, box-shadow .2s ease; }
@@ -128,7 +128,9 @@ body { margin: 0; }
 .invoice-status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .invoice-status-item { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid var(--dashboard-border); border-radius: 12px; }
 .invoice-status-item div { display:flex; flex-direction:column }.invoice-status-item strong { font-size:18px }.invoice-status-item small { opacity:.65 }
-@media (max-width: 600px) { .v-container { padding: 14px !important; } .login-card { padding: 28px 22px !important; } }
+@media (max-width: 600px) { .v-container { padding: 14px !important; } .login-shell { align-items: center; padding: 14px; } .login-card { padding: 26px 20px 22px !important; border-radius: 20px !important; } .login-logo { width: 88px; height: 88px; margin-bottom: 16px !important; } .login-title { padding: 0 4px !important; font-size: clamp(1.6rem, 8vw, 2rem) !important; line-height: 1.18 !important; white-space: normal !important; } .login-subtitle { margin-top: 6px; margin-bottom: 22px !important; padding: 0 4px !important; white-space: normal !important; line-height: 1.4 !important; } .login-card .v-field { min-width: 0; } }
+@media (max-width: 380px) { .login-shell { padding: 10px; } .login-card { padding: 22px 16px 18px !important; } .login-logo { width: 78px; height: 78px; } }
+@media (max-height: 620px) and (orientation: landscape) { .login-shell { align-items: start; } .login-card { margin-block: 10px; } .login-logo { width: 70px; height: 70px; margin-bottom: 10px !important; } .login-subtitle { margin-bottom: 14px !important; } }
 @media (max-width: 600px) { .user-modal__header, .user-modal__body { padding: 18px !important; } .avatar-panel { align-items: flex-start; gap: 14px; } .avatar-panel .v-avatar { width: 68px !important; height: 68px !important; } .form-section { padding: 16px 14px 2px; } .status-panel { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 700px) { .payment-table { display: none; } .payment-cards { display: block; } .payment-filter .v-select { max-width: none !important; width: 100%; } .payment-form-card__header { padding: 16px; } }
 
