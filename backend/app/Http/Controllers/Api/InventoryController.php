@@ -72,8 +72,23 @@ class InventoryController extends Controller
     public function storeTransaction(Request $request): JsonResponse
     {
         $this->allow($request);$payload=$request->input('payload');if(is_string($payload))$request->merge(json_decode($payload,true)?:[]);
-        $data=$request->validate(['code'=>'nullable|max:60|unique:stock_transactions,code','type'=>'required|in:IN,OUT','warehouse_id'=>'required|exists:warehouses,id','transaction_date'=>'required|date','partner'=>'nullable|max:255','reference_no'=>'nullable|max:100','note'=>'nullable|string','items'=>'required|array|min:1','items.*.material_id'=>'required|distinct|exists:materials,id','items.*.quantity'=>'required|numeric|gt:0','items.*.unit_price'=>'nullable|numeric|min:0','items.*.note'=>'nullable|string','documents'=>'nullable|array|max:10','documents.*'=>'file|mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx|max:10240']);
+        $data=$this->validateTransaction($request);
         return response()->json(['success'=>true,'message'=>$data['type']==='IN'?'Đã nhập kho.':'Đã xuất kho.','data'=>$this->service->createTransaction($data,$request)],201);
+    }
+
+    public function updateTransaction(Request $request, StockTransaction $transaction): JsonResponse
+    {
+        $this->allow($request);$payload=$request->input('payload');if(is_string($payload))$request->merge(json_decode($payload,true)?:[]);
+        $data=$this->validateTransaction($request,$transaction->id);
+        $updated=$this->service->updateTransaction($transaction,$data,$request);
+        return response()->json(['success'=>true,'message'=>'Đã cập nhật phiếu kho.','data'=>$updated]);
+    }
+
+    public function destroyTransaction(Request $request, StockTransaction $transaction): JsonResponse
+    {
+        $this->allow($request);
+        $this->service->deleteTransaction($transaction,$request);
+        return response()->json(['success'=>true,'message'=>'Đã xóa phiếu kho.','data'=>null]);
     }
 
     public function stocks(Request $request): JsonResponse
@@ -94,6 +109,49 @@ class InventoryController extends Controller
     public function export(Request $request, ExcelExportService $excel): BinaryFileResponse
     {
         $this->allow($request);$stocks=WarehouseStock::with(['warehouse','material.category'])->get();$rows=$stocks->map(fn($s,$i)=>[$i+1,$s->warehouse->code,$s->warehouse->name,$s->material->code,$s->material->name,$s->material->category->name,$s->material->unit,(float)$s->quantity,(float)$s->average_price,(float)$s->quantity*(float)$s->average_price])->all();$path=$excel->create('Báo cáo tồn kho',['STT','Mã kho','Kho','Mã vật tư','Vật tư','Loại','ĐVT','Số lượng tồn','Giá bình quân','Giá trị tồn'],$rows,[8,14,24,16,28,22,10,16,18,20]);return response()->download($path,'bao-cao-ton-kho-'.now()->format('Ymd-His').'.xlsx')->deleteFileAfterSend();
+    }
+
+    private function validateTransaction(Request $request, ?int $id = null): array
+    {
+        return $request->validate(
+            [
+                'code' => ['nullable', 'max:60', Rule::unique('stock_transactions', 'code')->ignore($id)],
+                'type' => 'required|in:IN,OUT',
+                'warehouse_id' => 'required|exists:warehouses,id',
+                'transaction_date' => 'required|date',
+                'partner' => 'nullable|max:255',
+                'reference_no' => 'nullable|max:100',
+                'note' => 'nullable|string',
+                'items' => 'required|array|min:1',
+                'items.*.material_id' => 'required|distinct|exists:materials,id',
+                'items.*.quantity' => 'required|numeric|gt:0',
+                'items.*.unit_price' => 'nullable|numeric|min:0',
+                'items.*.note' => 'nullable|string',
+                'documents' => 'nullable|array|max:10',
+                'documents.*' => 'file|mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx|max:10240',
+            ],
+            [
+                'warehouse_id.required' => 'Vui lòng chọn kho.',
+                'warehouse_id.exists' => 'Kho được chọn không hợp lệ.',
+                'type.required' => 'Vui lòng chọn loại phiếu.',
+                'transaction_date.required' => 'Vui lòng chọn ngày nhập/xuất.',
+                'items.required' => 'Vui lòng thêm ít nhất một dòng vật tư.',
+                'items.min' => 'Vui lòng thêm ít nhất một dòng vật tư.',
+                'items.*.material_id.required' => 'Vui lòng chọn vật tư cho từng dòng.',
+                'items.*.material_id.exists' => 'Vật tư được chọn không hợp lệ.',
+                'items.*.quantity.required' => 'Vui lòng nhập số lượng.',
+                'items.*.quantity.gt' => 'Số lượng phải lớn hơn 0.',
+            ],
+            [
+                'warehouse_id' => 'kho',
+                'type' => 'loại phiếu',
+                'transaction_date' => 'ngày nhập/xuất',
+                'items' => 'danh sách vật tư',
+                'items.*.material_id' => 'vật tư',
+                'items.*.quantity' => 'số lượng',
+                'items.*.unit_price' => 'đơn giá',
+            ],
+        );
     }
 
     private function created(Request $r,Model $m):JsonResponse{$this->audit($r,'CREATE',$m);return response()->json(['success'=>true,'message'=>'Đã thêm dữ liệu.','data'=>$m],201);} private function updated(Request $r,Model $m,array $old):JsonResponse{$this->audit($r,'UPDATE',$m,$old);return response()->json(['success'=>true,'message'=>'Đã cập nhật dữ liệu.','data'=>$m]);} private function deleted(Request $r,Model $m):JsonResponse{$this->audit($r,'DELETE',$m,$m->toArray());$m->delete();return response()->json(['success'=>true,'message'=>'Đã xóa dữ liệu.','data'=>null]);}

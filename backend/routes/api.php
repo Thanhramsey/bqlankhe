@@ -65,6 +65,8 @@ Route::prefix('v1')->group(function () {
             Route::delete('materials/{material}', [InventoryController::class, 'destroyMaterial']);
             Route::get('transactions', [InventoryController::class, 'transactions']);
             Route::post('transactions', [InventoryController::class, 'storeTransaction']);
+            Route::put('transactions/{transaction}', [InventoryController::class, 'updateTransaction']);
+            Route::delete('transactions/{transaction}', [InventoryController::class, 'destroyTransaction']);
             Route::get('stocks', [InventoryController::class, 'stocks']);
             Route::get('report', [InventoryController::class, 'report']);
             Route::get('report/export', [InventoryController::class, 'export']);

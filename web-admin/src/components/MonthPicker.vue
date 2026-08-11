@@ -8,7 +8,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const menu = ref(false)
 const year = ref(Number(props.modelValue?.slice(0, 4)) || new Date().getFullYear())
 const months = Array.from({ length: 12 }, (_, index) => index + 1)
-const displayValue = computed(() => props.modelValue ? `Tháng ${props.modelValue.slice(5, 7)}/${props.modelValue.slice(0, 4)}` : '')
+const displayValue = computed(() => props.modelValue ? `${props.modelValue.slice(5, 7)}/${props.modelValue.slice(0, 4)}` : '')
 
 watch(() => props.modelValue, (value) => {
   if (value) year.value = Number(value.slice(0, 4))

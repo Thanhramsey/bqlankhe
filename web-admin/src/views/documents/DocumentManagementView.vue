@@ -16,6 +16,7 @@ const tab = ref('documents'),
 const search = ref(''),
   showDeleted = ref(false),
   error = ref(''),
+  formError = ref(''),
   notice = ref(''),
   file = ref<File | null>(null),
   form = reactive<Row>({})
@@ -104,6 +105,7 @@ function resetForm() {
 }
 function add() {
   resetForm()
+  formError.value = ''
   Object.assign(
     form,
     tab.value === 'categories'
@@ -118,12 +120,13 @@ function add() {
 }
 function edit(row: Row) {
   resetForm()
+  formError.value = ''
   Object.assign(form, JSON.parse(JSON.stringify(row)), { kind: tab.value })
   dialog.value = true
 }
 async function save() {
   saving.value = true
-  error.value = ''
+  formError.value = ''
   try {
     let endpoint = form.kind === 'categories' ? '/documents/categories' : '/documents'
     if (form.id) endpoint += `/${form.id}`
@@ -151,7 +154,8 @@ async function save() {
     notice.value = form.id ? 'Đã cập nhật tài liệu' : 'Đã thêm dữ liệu'
     await Promise.all([load(), loadOptions()])
   } catch (e: any) {
-    error.value = e.message
+    if (dialog.value) formError.value = e.message
+    else error.value = e.message
   } finally {
     saving.value = false
   }
@@ -224,6 +228,9 @@ let timer: number | undefined
 watch(search, () => {
   clearTimeout(timer)
   timer = window.setTimeout(load, 350)
+})
+watch(dialog, (isOpen) => {
+  if (!isOpen) formError.value = ''
 })
 watch([tab, showDeleted], load)
 onMounted(async () => {
@@ -484,6 +491,9 @@ onBeforeUnmount(() => {
         </div>
         <v-card-text class="user-modal__body"
           ><v-form id="document-form" @submit.prevent="save"
+            ><v-alert v-if="formError" type="error" variant="tonal" class="mb-4">{{
+              formError
+            }}</v-alert>
             ><div class="form-section">
               <div class="form-section__title">
                 <v-icon icon="mdi-text-box-edit-outline" />Thông tin tài liệu

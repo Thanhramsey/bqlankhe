@@ -16,6 +16,7 @@ const rows = ref<Row[]>([]),
   detailDialog = ref(false),
   search = ref(''),
   error = ref(''),
+  formError = ref(''),
   notice = ref(''),
   attachments = ref<File[]>([]),
   editor = ref<HTMLElement | null>(null),
@@ -81,12 +82,14 @@ function emptyForm() {
 }
 async function add() {
   emptyForm()
+  formError.value = ''
   dialog.value = true
   await nextTick()
   if (editor.value) editor.value.innerHTML = ''
 }
 async function edit(item: Row) {
   emptyForm()
+  formError.value = ''
   Object.assign(form, JSON.parse(JSON.stringify(item)), {
     recipient_ids: item.recipients?.map((x: Row) => x.id) || [],
     remove_attachment_ids: [],
@@ -104,9 +107,10 @@ function removeAttachment(item: Row) {
   form.attachments = form.attachments.filter((x: Row) => x.id !== item.id)
 }
 async function save() {
+  formError.value = ''
   form.content = editor.value?.innerHTML || ''
   if (!form.content.replace(/<[^>]+>/g, '').trim()) {
-    error.value = 'Vui lòng nhập nội dung thông tin điều hành.'
+    formError.value = 'Vui lòng nhập nội dung thông tin điều hành.'
     return
   }
   saving.value = true
@@ -125,7 +129,8 @@ async function save() {
     notice.value = form.id ? 'Đã cập nhật thông tin điều hành' : 'Đã gửi thông tin điều hành'
     await load()
   } catch (e: any) {
-    error.value = e.message
+    if (dialog.value) formError.value = e.message
+    else error.value = e.message
   } finally {
     saving.value = false
   }
@@ -171,6 +176,9 @@ let timer: number | undefined
 watch(search, () => {
   clearTimeout(timer)
   timer = window.setTimeout(load, 350)
+})
+watch(dialog, (isOpen) => {
+  if (!isOpen) formError.value = ''
 })
 watch(
   () => route.path,
@@ -344,6 +352,9 @@ onMounted(async () => {
         </div>
         <v-card-text class="user-modal__body"
           ><v-form id="directive-form" @submit.prevent="save"
+            ><v-alert v-if="formError" type="error" variant="tonal" class="mb-4">{{
+              formError
+            }}</v-alert>
             ><div class="form-section">
               <div class="form-section__title">
                 <v-icon icon="mdi-file-document-edit-outline" />Thông tin phiếu

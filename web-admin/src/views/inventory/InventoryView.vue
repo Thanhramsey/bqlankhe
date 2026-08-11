@@ -14,6 +14,7 @@ const rows = ref<AnyRow[]>([]),
   options = ref<AnyRow>({ categories: [], warehouses: [], materials: [] }),
   report = ref<AnyRow>({ summary: {}, stocks: [] })
 const dialog = ref(false),
+  modalError = ref(''),
   historyDialog = ref(false),
   selectedHistory = ref<AnyRow[]>([]),
   imageFile = ref<File | null>(null),
@@ -69,6 +70,7 @@ function clearForm() {
   Object.keys(form).forEach((k) => delete form[k])
   imageFile.value = null
   documents.value = []
+  modalError.value = ''
 }
 function openCreate(kind = tab.value) {
   clearForm()
@@ -98,14 +100,19 @@ function materialChanged(row: AnyRow) {
 }
 async function save() {
   saving.value = true
-  error.value = ''
+  modalError.value = ''
   try {
     let endpoint = `/inventory/${form.kind}`,
       method = form.id ? 'PUT' : 'POST',
       body: any
     if (form.kind === 'transactions') {
+      endpoint = `/inventory/transactions${form.id ? `/${form.id}` : ''}`
       const fd = new FormData()
       fd.append('payload', JSON.stringify({ ...form, kind: undefined }))
+      if (form.id) {
+        fd.append('_method', 'PUT')
+        method = 'POST'
+      } else method = 'POST'
       documents.value.forEach((f) => fd.append('documents[]', f))
       body = fd
     } else if (form.kind === 'materials') {
@@ -142,12 +149,25 @@ async function save() {
     dialog.value = false
     await Promise.all([load(), loadOptions()])
   } catch (e: any) {
-    error.value = e.message
+    if (dialog.value) modalError.value = e.message
+    else error.value = e.message
   } finally {
     saving.value = false
   }
 }
 async function remove(item: AnyRow) {
+  if (tab.value === 'transactions') {
+    if (!confirm(`Xóa phiếu ${item.code}?`)) return
+    try {
+      await api(`/inventory/transactions/${item.id}`, { method: 'DELETE' })
+      message.value = 'Đã xóa phiếu kho'
+      await load()
+    } catch (e: any) {
+      error.value = e.message
+    }
+    return
+  }
+
   if (!confirm(`Xóa ${item.name}?`)) return
   try {
     await api(`/inventory/${tab.value}/${item.id}`, { method: 'DELETE' })
@@ -192,6 +212,9 @@ watch(search, () => {
 watch(tab, () => {
   search.value = ''
   load()
+})
+watch(dialog, (value) => {
+  if (!value) modalError.value = ''
 })
 onMounted(async () => {
   await loadOptions()
@@ -455,6 +478,7 @@ onMounted(async () => {
           { title: 'Tổng tiền', key: 'total_amount', align: 'end' },
           { title: 'Người tạo', key: 'creator.name' },
           { title: 'Tệp', key: 'documents', align: 'center' },
+          { title: 'Thao tác', key: 'actions', align: 'end', sortable: false },
         ]"
         ><template #item.transaction_date="{ value }">{{
           new Date(value).toLocaleDateString('vi-VN')
@@ -478,6 +502,19 @@ onMounted(async () => {
             icon="mdi-paperclip"
             size="small"
             variant="text" /></template
+        ><template #item.actions="{ item }"
+          ><v-btn
+            icon="mdi-pencil"
+            size="small"
+            variant="text"
+            title="Sửa phiếu"
+            @click="openEdit(item)" /><v-btn
+            icon="mdi-delete"
+            color="error"
+            size="small"
+            variant="text"
+            title="Xóa phiếu"
+            @click="remove(item)" /></template
       ></v-data-table>
       <v-data-table
         v-else
@@ -524,6 +561,9 @@ onMounted(async () => {
           </div>
           <v-btn icon="mdi-close" variant="text" @click="dialog = false" /></v-card-title
         ><v-divider /><v-card-text class="pa-5">
+          <v-alert v-if="modalError" type="error" variant="tonal" class="mb-4">{{
+            modalError
+          }}</v-alert>
           <v-row v-if="form.kind === 'categories' || form.kind === 'warehouses'" dense
             ><v-col cols="12" sm="4"><v-text-field v-model="form.code" label="Mã *" /></v-col
             ><v-col cols="12" sm="8"><v-text-field v-model="form.name" label="Tên *" /></v-col

@@ -28,9 +28,31 @@ const drawer = ref(true)
 const directiveAlert = ref(false)
 const busy = ref(false)
 const error = ref('')
+const modalError = ref('')
 const snackbar = ref(false)
 const snackbarText = ref('')
-const search = ref('')
+const householdSearch = ref('')
+const resourceSearches = reactive<Record<string, string>>({
+  '/provinces': '',
+  '/wards': '',
+  '/neighborhoods': '',
+  '/services': '',
+  '/routes': '',
+  '/users': '',
+  '/settings': '',
+})
+const searchQuery = computed({
+  get() {
+    return page.value === '/households'
+      ? String(householdSearch.value || '')
+      : String(resourceSearches[page.value] || '')
+  },
+  set(value: string) {
+    const normalized = String(value || '')
+    if (page.value === '/households') householdSearch.value = normalized
+    else if (page.value in resourceSearches) resourceSearches[page.value] = normalized
+  },
+})
 const householdRouteFilter = ref<number | null>(null)
 const householdServiceFilter = ref<number | null>(null)
 const paymentRouteFilter = ref<number | null>(null)
@@ -303,7 +325,7 @@ const pageTitle = computed(() =>
         : page.value === '/directives/inbox'
           ? 'Thông tin điều hành nhận'
           : page.value === '/'
-            ? 'Tổng quan'
+            ? 'Dashboard'
             : page.value === '/payments'
               ? 'Thu phí'
               : page.value === '/invoices'
@@ -586,7 +608,8 @@ async function load() {
       routeOptions.value.routes = optionsResponse.data.routes || []
     } else if (page.value === '/invoices') {
       const params = new URLSearchParams({ per_page: '100' })
-      if (invoiceSearch.value.trim()) params.set('search', invoiceSearch.value.trim())
+      const invoiceSearchTerm = String(invoiceSearch.value || '').trim()
+      if (invoiceSearchTerm) params.set('search', invoiceSearchTerm)
       if (invoiceStatusFilter.value) params.set('status', invoiceStatusFilter.value)
       if (invoiceRouteFilter.value)
         params.set('collection_route_id', String(invoiceRouteFilter.value))
@@ -614,8 +637,9 @@ async function load() {
     } else if (page.value === '/settings') {
       invoiceSettings.value = (await api<any>('/invoice-settings')).data
     } else if (config.value) {
+      const search = searchQuery.value.trim()
       const params = new URLSearchParams({
-        search: search.value,
+        search,
         with_deleted: showDeleted.value ? '1' : '0',
       })
       if (page.value === '/households' && householdRouteFilter.value)
@@ -700,11 +724,13 @@ async function openForm(row: any = null) {
         type: 'string',
         group: 'general',
       }
+  modalError.value = ''
   modal.value = true
   avatarFile.value = null
   avatarPreview.value = row?.avatar_url || ''
 }
 async function save() {
+  modalError.value = ''
   try {
     const endpoint = `/${config.value!.endpoint}${editing.value.id ? `/${editing.value.id}` : ''}`
     if (page.value === '/users') {
@@ -743,7 +769,8 @@ async function save() {
     notify('Đã lưu dữ liệu')
     await load()
   } catch (e: any) {
-    error.value = e.message
+    if (modal.value) modalError.value = e.message
+    else error.value = e.message
   }
 }
 async function remove(row: any) {
@@ -1189,7 +1216,8 @@ async function downloadExport(path: string, fallbackName: string) {
 }
 function exportHouseholds() {
   const params = new URLSearchParams()
-  if (search.value.trim()) params.set('search', search.value.trim())
+  const householdSearchTerm = String(householdSearch.value || '').trim()
+  if (householdSearchTerm) params.set('search', householdSearchTerm)
   if (householdRouteFilter.value)
     params.set('collection_route_id', String(householdRouteFilter.value))
   if (householdServiceFilter.value) params.set('service_id', String(householdServiceFilter.value))
@@ -1205,7 +1233,8 @@ function exportDebts() {
 }
 function exportInvoices() {
   const params = new URLSearchParams()
-  if (invoiceSearch.value.trim()) params.set('search', invoiceSearch.value.trim())
+  const invoiceSearchTerm = String(invoiceSearch.value || '').trim()
+  if (invoiceSearchTerm) params.set('search', invoiceSearchTerm)
   if (invoiceStatusFilter.value) params.set('status', invoiceStatusFilter.value)
   if (invoiceRouteFilter.value) params.set('collection_route_id', String(invoiceRouteFilter.value))
   return downloadExport(`/invoices-export?${params}`, 'danh-sach-hoa-don-dien-tu.xlsx')
@@ -1248,7 +1277,7 @@ watch(
   },
   { deep: true },
 )
-watch(search, () => {
+watch(searchQuery, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 350)
 })
@@ -1342,6 +1371,9 @@ watch(profileAvatarFile, (file) => {
       ? ''
       : auth.user?.avatar_url || ''
   if (file) profileForm.remove_avatar = false
+})
+watch(modal, (isOpen) => {
+  if (!isOpen) modalError.value = ''
 })
 onMounted(async () => {
   await auth.restore()
@@ -2142,7 +2174,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                   ><v-icon icon="mdi-filter-variant"
                 /></v-avatar>
                 <div>
-                  <div class="font-weight-bold">Bộ lọc công nợ</div>
+                  <div class="font-weight-bold">Công nợ</div>
                   <div class="text-caption text-medium-emphasis">
                     Khoảng thời gian tính theo các tháng chưa thanh toán
                   </div>
@@ -2184,7 +2216,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                     prepend-icon="mdi-magnify"
                     :loading="busy"
                     @click="load"
-                    >Lọc dữ liệu</v-btn
+                    >Tìm kiếm</v-btn
                   ></v-col
                 ></v-row
               >
@@ -2285,30 +2317,27 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
           </template>
 
           <template v-else-if="page === '/payments'">
-            <v-card class="payment-filter pa-4 mb-5" border rounded="xl"
-              ><div
-                class="d-flex flex-column flex-md-row align-md-center justify-space-between ga-3"
-              >
-                <div>
-                  <div class="font-weight-bold">
+            <v-card class="payment-filter pa-4 mb-5" border rounded="xl">
+              <div class="d-flex flex-column flex-md-row align-start ga-3">
+                <div class="flex-grow-1">
+                  <div class="font-weight-bold mb-2">
                     <v-icon icon="mdi-routes" color="primary" class="mr-2" />Chọn tuyến thu
                   </div>
-                  <div class="text-caption text-medium-emphasis mt-1">
-                    Lọc hộ dân và giao dịch theo tuyến phụ trách
-                  </div>
+                  <v-select
+                    v-model="paymentRouteFilter"
+                    :items="routeOptions.routes || []"
+                    item-title="name"
+                    item-value="id"
+                    label="Tất cả tuyến thu"
+                    prepend-inner-icon="mdi-map-marker-path"
+                    hide-details
+                    clearable
+                    class="w-100"
+                    style="max-width: 420px"
+                  />
                 </div>
-                <v-select
-                  v-model="paymentRouteFilter"
-                  :items="routeOptions.routes || []"
-                  item-title="name"
-                  item-value="id"
-                  label="Tất cả tuyến thu"
-                  prepend-inner-icon="mdi-map-marker-path"
-                  hide-details
-                  clearable
-                  max-width="420"
-                /></div
-            ></v-card>
+              </div>
+            </v-card>
             <v-row align="start"
               ><v-col cols="12" lg="5"
                 ><v-card class="payment-form-card" border rounded="xl"
@@ -2324,7 +2353,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                   <v-divider /><v-card-text class="pa-4 pa-sm-5"
                     ><v-form @submit.prevent="collect()">
                       <div class="payment-step">
-                        <div class="payment-step__label"><span>1</span> Chọn hộ dân</div>
+                        <div class="payment-step__label"><span>1</span> Hộ dân</div>
                         <v-autocomplete
                           v-model="payment.household_ids"
                           :items="paymentHouseholdOptions"
@@ -2347,7 +2376,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         </div>
                       </div>
                       <div class="payment-step">
-                        <div class="payment-step__label"><span>2</span> Chọn kỳ thanh toán</div>
+                        <div class="payment-step__label"><span>2</span> Kỳ thanh toán</div>
                         <v-row dense align="start"
                           ><v-col cols="12" sm="5"
                             ><MonthPicker v-model="payment.from_month" label="Từ tháng" /></v-col
@@ -2781,9 +2810,9 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                 dân
               </div>
               <v-row dense align="center">
-                <v-col cols="12" md="5"
+                <v-col cols="12" md="4"
                   ><v-text-field
-                    v-model="search"
+                    v-model="searchQuery"
                     prepend-inner-icon="mdi-magnify"
                     label="Tên, SĐT, CCCD, MST hoặc địa chỉ"
                     hide-details
@@ -2811,8 +2840,16 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                     hide-details
                     clearable
                 /></v-col>
-                <v-col cols="12" md="1" class="text-md-end"
+                <v-col cols="12" md="2" class="d-flex flex-row flex-md-row justify-end ga-2 text-md-end flex-nowrap"
                   ><v-btn
+                    icon="mdi-refresh"
+                    size="large"
+                    variant="tonal"
+                    color="primary"
+                    title="Làm mới dữ liệu"
+                    :loading="busy"
+                    @click="load"
+                  /><v-btn
                     color="primary"
                     icon="mdi-plus"
                     size="large"
@@ -2823,15 +2860,24 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
             </v-card>
             <div v-else class="d-flex flex-column flex-sm-row justify-space-between ga-3 mb-5">
               <v-text-field
-                v-model="search"
+                v-model="searchQuery"
                 prepend-inner-icon="mdi-magnify"
                 label="Tìm kiếm"
                 hide-details
                 max-width="360"
                 clearable
-              /><v-btn color="primary" size="large" prepend-icon="mdi-plus" @click="openForm()"
-                >Thêm mới</v-btn
-              >
+              /><div class="d-flex ga-2 flex-wrap">
+                <v-btn
+                  color="primary"
+                  size="large"
+                  variant="text"
+                  prepend-icon="mdi-refresh"
+                  :loading="busy"
+                  @click="load"
+                  >Làm mới</v-btn
+                ><v-btn color="primary" size="large" prepend-icon="mdi-plus" @click="openForm()"
+                  >Thêm mới</v-btn
+                ></div>
             </div>
             <v-card border
               ><v-data-table :headers="headers" :items="rows" :loading="busy" hover
@@ -2910,6 +2956,9 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
           </div>
           <v-card-text class="user-modal__body"
             ><v-form id="user-form" @submit.prevent="save">
+              <v-alert v-if="modalError" type="error" variant="tonal" class="mb-4">{{
+                modalError
+              }}</v-alert>
               <div class="avatar-panel mb-6">
                 <v-avatar
                   size="88"
@@ -3172,6 +3221,9 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
           </div>
           <v-card-text class="user-modal__body"
             ><v-form id="household-form" @submit.prevent="save">
+              <v-alert v-if="modalError" type="error" variant="tonal" class="mb-4">{{
+                modalError
+              }}</v-alert>
               <div class="form-section">
                 <div class="form-section__title">
                   <v-icon icon="mdi-account-details-outline" /> Thông tin hộ dân
@@ -3324,14 +3376,14 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
               </div> </v-form
           ></v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"
-            ><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn
-            ><v-btn
+            ><v-spacer /><v-btn
               color="primary"
               size="large"
               type="submit"
               form="household-form"
               prepend-icon="mdi-content-save-outline"
               >{{ editing.id ? 'Lưu thay đổi' : 'Thêm hộ dân' }}</v-btn
+            ><v-btn variant="text" @click="modal = false">Hủy</v-btn
             ></v-card-actions
           >
         </v-card>
@@ -3357,6 +3409,9 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
           </div>
           <v-card-text class="user-modal__body">
             <v-form id="resource-form" @submit.prevent="save">
+              <v-alert v-if="modalError" type="error" variant="tonal" class="mb-4">{{
+                modalError
+              }}</v-alert>
               <v-alert
                 v-if="page === '/services' && editing.id"
                 type="info"
@@ -3429,14 +3484,14 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
             </v-form>
           </v-card-text>
           <v-divider /><v-card-actions class="user-modal__actions"
-            ><v-spacer /><v-btn variant="text" @click="modal = false">Hủy</v-btn
-            ><v-btn
+            ><v-spacer /><v-btn
               color="primary"
               size="large"
               type="submit"
               form="resource-form"
               prepend-icon="mdi-content-save-outline"
               >{{ editing.id ? 'Lưu thay đổi' : 'Thêm mới' }}</v-btn
+            ><v-btn variant="text" @click="modal = false">Hủy</v-btn
             ></v-card-actions
           >
         </v-card>
