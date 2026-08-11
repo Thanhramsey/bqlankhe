@@ -95,6 +95,7 @@ const priceEditing = ref<any>(null)
 const paymentPriceModal = ref(false)
 const paymentPriceDetail = ref<any>(null)
 const paymentSubmitting = ref(false)
+const paymentOptionsLoading = ref(false)
 const recentPaymentEditModal = ref(false)
 const recentPaymentEditSaving = ref(false)
 const recentPaymentEdit = ref<any>({})
@@ -594,12 +595,15 @@ async function login() {
 }
 async function load() {
   if (!auth.user) return
+  let activePaymentLoadSequence: number | null = null
   busy.value = true
   error.value = ''
   try {
     if (page.value === '/') return
     else if (page.value === '/payments') {
       const loadSequence = ++paymentLoadSequence
+      activePaymentLoadSequence = loadSequence
+      paymentOptionsLoading.value = true
       const routeQuery = paymentRouteFilter.value
         ? `&collection_route_id=${paymentRouteFilter.value}`
         : ''
@@ -705,6 +709,12 @@ async function load() {
   } catch (e: any) {
     error.value = e.message
   } finally {
+    if (
+      activePaymentLoadSequence !== null &&
+      activePaymentLoadSequence === paymentLoadSequence
+    ) {
+      paymentOptionsLoading.value = false
+    }
     busy.value = false
   }
 }
@@ -1318,9 +1328,17 @@ watch(showDeleted, load)
 watch([householdRouteFilter, householdServiceFilter], load)
 watch(paymentRouteFilter, () => {
   payment.household_ids = []
+  households.value = []
   paymentPage.value = 1
   load()
 })
+
+function refreshPayments() {
+  payment.household_ids = []
+  households.value = []
+  load()
+}
+
 watch(paymentPerPage, () => {
   paymentPage.value = 1
   if (page.value === '/payments') load()
@@ -2350,6 +2368,15 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                     style="max-width: 420px"
                   />
                 </div>
+                <v-btn
+                  icon="mdi-refresh"
+                  variant="tonal"
+                  color="primary"
+                  :loading="paymentOptionsLoading"
+                  title="Làm mới dữ liệu thu phí"
+                  aria-label="Làm mới dữ liệu thu phí"
+                  @click="refreshPayments"
+                />
               </div>
             </v-card>
             <v-row align="start"
@@ -2371,7 +2398,7 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <v-checkbox
                           :model-value="allPaymentHouseholdsSelected"
                           :indeterminate="somePaymentHouseholdsSelected"
-                          :disabled="!paymentHouseholdOptions.length"
+                          :disabled="paymentOptionsLoading || !paymentHouseholdOptions.length"
                           label="Chọn tất cả hộ dân trong tuyến"
                           color="primary"
                           density="compact"
@@ -2382,11 +2409,17 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                         <v-autocomplete
                           v-model="payment.household_ids"
                           :items="paymentHouseholdOptions"
+                          :loading="paymentOptionsLoading"
+                          :disabled="paymentOptionsLoading"
                           item-title="payment_label"
                           item-value="id"
                           label="Các hộ dân cần thu"
                           prepend-inner-icon="mdi-home-account"
-                          no-data-text="Không có hộ dân trong tuyến này"
+                          :no-data-text="
+                            paymentOptionsLoading
+                              ? 'Đang tải danh sách hộ dân...'
+                              : 'Không có hộ dân trong tuyến này'
+                          "
                           multiple
                           chips
                           closable-chips
