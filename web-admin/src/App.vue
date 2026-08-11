@@ -365,12 +365,26 @@ const paymentHouseholdOptions = computed(() =>
     payment_label: `${household.code || 'Chưa có mã'} — ${household.owner_name || 'Chưa có tên'} · ${household.address || 'Chưa có địa chỉ'}`,
   })),
 )
+const allPaymentHouseholdsSelected = computed(
+  () =>
+    paymentHouseholdOptions.value.length > 0 &&
+    paymentHouseholdOptions.value.every((household) => payment.household_ids.includes(household.id)),
+)
+const somePaymentHouseholdsSelected = computed(
+  () => payment.household_ids.length > 0 && !allPaymentHouseholdsSelected.value,
+)
 const paymentMonthCount = computed(() => {
   if (!payment.from_month || !payment.to_month) return 0
   const [fromYear = 0, fromMonth = 0] = payment.from_month.split('-').map(Number)
   const [toYear = 0, toMonth = 0] = payment.to_month.split('-').map(Number)
   return Math.max(0, (toYear - fromYear) * 12 + toMonth - fromMonth + 1)
 })
+
+function toggleAllPaymentHouseholds() {
+  payment.household_ids = allPaymentHouseholdsSelected.value
+    ? []
+    : paymentHouseholdOptions.value.map((household) => household.id)
+}
 
 function addMonthsToPeriod(monthValue: string, numberOfMonths: number) {
   const [year = 0, month = 0] = monthValue.split('-').map(Number)
@@ -2354,6 +2368,17 @@ onBeforeUnmount(() => window.clearInterval(directiveRefreshTimer))
                     ><v-form @submit.prevent="collect()">
                       <div class="payment-step">
                         <div class="payment-step__label"><span>1</span> Hộ dân</div>
+                        <v-checkbox
+                          :model-value="allPaymentHouseholdsSelected"
+                          :indeterminate="somePaymentHouseholdsSelected"
+                          :disabled="!paymentHouseholdOptions.length"
+                          label="Chọn tất cả hộ dân trong tuyến"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                          class="mb-2"
+                          @click="toggleAllPaymentHouseholds"
+                        />
                         <v-autocomplete
                           v-model="payment.household_ids"
                           :items="paymentHouseholdOptions"
